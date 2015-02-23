@@ -5,6 +5,7 @@ import java.io.{FileWriter, BufferedWriter, File}
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
+import org.apache.spark.mllib.tree.model.DecisionTreeModel
 
 import org.apache.spark.mllib.tree.{RandomForest, DecisionTree}
 import org.apache.spark.mllib.util.MLUtils
@@ -35,7 +36,7 @@ object BaggingExample {
 
   def main(args: Array[String]) {
     val inputFile = "hdfs://mp1.polito.it/user/lucav/planes/2008.csv" // Should be some file on your system
-    val predictionsOutFile = "/home/lucav/predictions.csv"
+    val predictionsOutFilePrefix = "predictions"
     val conf = new SparkConf().setAppName("Bagging_v0.1").setMaster("local[2]")
     val sc = new SparkContext(conf)
     val all = sc.textFile(inputFile)
@@ -51,7 +52,7 @@ object BaggingExample {
       val ori = airports.indexOf(x(16)).toString
       val des = airports.indexOf(x(17)).toString
       val all = x.slice(0, 8) ++ x.slice(11, 15) ++ Array(ori, des) ++ x.slice(18, 21)
-      LabeledPoint(x(15).toDouble, new DenseVector(all.map(_.toDouble)))
+      LabeledPoint({if (x(15).toDouble > 15.0) 1 else 0}, new DenseVector(all.map(_.toDouble)))
     }
     // Split the data into training and test sets (30% held out for testing)
     val splits = selected.randomSplit(Array(0.7, 0.3))
@@ -60,14 +61,15 @@ object BaggingExample {
     /* RFs */
 
     // Train a RandomForest model.
+    val numClasses = 2
     val categoricalFeaturesInfo = Map[Int, Int](12 → airports.size, 13 → airports.size)
     val numTrees = 3 // Use more in practice.
     val featureSubsetStrategy = "all"
-    val impurity = "variance"
+    val impurity = "gini"
     val maxDepth = 4
     val maxBins = airports.size
 
-    val modelForest = time{RandomForest.trainRegressor(trainingData, categoricalFeaturesInfo,
+    val modelForest = time{RandomForest.trainClassifier(trainingData, numClasses, categoricalFeaturesInfo,
       numTrees, featureSubsetStrategy, impurity, maxDepth, maxBins)}
 
     // Evaluate model on test instances and compute test error
@@ -78,20 +80,24 @@ object BaggingExample {
 
     println("Test Mean Squared Error for RF = " + testMSE(labelsAndPredictionsF))
 
+    println("Confusion matrix:")
+
+    labelsAndPredictionsF.groupBy(x => x).mapValues(_.size) foreach (println(_))
+
     /* BAGGING */
 
     val trees = time{
       Seq.fill(numTrees)(scala.util.Random.nextLong()).
         map(trainingData.sample(true, 0.01, _)).
-        map (DecisionTree.trainRegressor(_, categoricalFeaturesInfo,
+        map (DecisionTree.trainClassifier(_,numClasses, categoricalFeaturesInfo,
         impurity,
         maxDepth,
         maxBins))
     }
 
-    // Evaluate model on test instances and compute test error
+    // Evaluate model on test instances: MAJORITY VOTE
     val labelsAndPredictions = testData.take(100).toList.map { point =>
-      val prediction = trees.map(x => x.predict(point.features)) .sum / trees.size
+      val prediction = trees.map(x => x.predict(point.features)) .groupBy(x => x).mapValues(_.size).maxBy(_._2)._1
       (point.label, prediction)
     }
 
@@ -99,17 +105,22 @@ object BaggingExample {
 
     println(s"Test Mean Squared Error for Bagging = ${testMSE(labelsAndPredictions)}")
 
+    println("Confusion matrix:")
+
+    labelsAndPredictions.groupBy(x => x).mapValues(_.size) foreach (println(_))
+
     println("Learned regression forest model:\n" + modelForest.toDebugString)
 
     println("Learned regression trees models:\n" + trees.map(_.toDebugString))
 
     // FileWriter
-    val file = new File(predictionsOutFile)
+    val file = java.io.File.createTempFile(predictionsOutFilePrefix, ".csv", new File("/var/tmp/"))
     val bw = new BufferedWriter(new FileWriter(file))
     bw.write(labelsAndPredictionsF.sortBy(_._1).map(_._1).mkString(", ") + "\n")
     bw.write(labelsAndPredictionsF.sortBy(_._1).map(_._2).mkString(", ") + "\n")
     bw.write(labelsAndPredictions.sortBy(_._1).map(_._2).mkString(", ") + "\n")
     bw.close()
+
 
 
 
