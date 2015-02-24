@@ -24,6 +24,14 @@ object L3Example {
 
     model.freqItemsets.collect().foreach{ itemset => println(itemset._1.mkString("[", ",", "]") + ", " + itemset._2) }
 
+    val numClasses = 2
+    model.freqItemsets.map{case (items, sup) => (items.partition(_ < numClasses), sup)}
+
+    val antecedents = model.freqItemsets.map{case (items, sup) => val x = items.partition(_ < numClasses);(x._2.toSet,(x._1, sup))} //cache?
+    val supAnts = antecedents.map(x => (x._1, x._2._2)).reduceByKey(_ + _)
+    val rules = antecedents.filter(!_._2._1.isEmpty).join(supAnts).mapValues(x => (x._1._1(0), x._1._2, x._1._2/x._2.toFloat))
+
+    rules.collect.foreach(x => println(x._1.mkString(", ") + " -> " + x._2._1 + " (" + x._2._2 + ", " + x._2._3 + ")"))
   }
 
 }
