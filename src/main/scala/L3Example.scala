@@ -1,3 +1,5 @@
+import java.io.{File, PrintWriter}
+
 import org.apache.spark.{SparkConf, SparkContext}
 
 /**
@@ -19,6 +21,10 @@ object L3Example {
     val l3 = new L3(numClasses = 2)
     val model=l3.train(transactions)
     println(model)
+
+    val writer = new PrintWriter(new File("/home/luca/data/L3.out"))
+    writer.write(model.toString())
+    writer.close()
 
     /*val fpg = new FPGrowth()
     	  .setMinSupport(0.2)
