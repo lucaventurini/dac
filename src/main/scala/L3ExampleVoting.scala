@@ -5,7 +5,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 /**
  * Created by Luca Venturini on 23/02/15.
  */
-object L3Example {
+object L3ExampleVoting {
 
   def main(args: Array[String]) {
     val inputFile = "/home/luca/data/voting/house-votes-84.data" // Should be some file on your system
@@ -18,8 +18,8 @@ object L3Example {
     val dict = data.map(_.zipWithIndex).flatMap(x => x).distinct.sortBy(_._2).zipWithIndex.collectAsMap
     val transactions = data.map(_.zipWithIndex.map(x => dict(x)))
 
-    val l3 = new L3(numClasses = 2)
-    val model=l3.train(transactions)
+    val l3 = new L3(numClasses = 2, minSupport = 0.05)
+    val model=l3.train(transactions).dBCoverage()
     println(model)
 
     val writer = new PrintWriter(new File("/home/luca/data/L3.out"))

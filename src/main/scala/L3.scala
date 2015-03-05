@@ -1,9 +1,6 @@
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
 
-import scala.collection.mutable
-import scala.util.Try
-
 /**
  * Created by luca on 24/02/15.
  */
@@ -14,31 +11,42 @@ case class Rule(antecedent:Set[Long], consequent:Long, support:Double, confidenc
   }
 }
 
-class L3Model(val rules:RDD[Rule], val numClasses:Int) extends java.io.Serializable{
+class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{
 
-  lazy val sortedRules = rules.sortBy(_.antecedent.size).collect()//todo: lex order
+  //var rules: List[Rule] = rules.sortBy(x => (x.confidence,x.support,x.antecedent.size,x.antecedent.mkString(", ")), ascending = false).collect().toList//todo: lex order is inverted
 
-  def predict(transaction:Set[Long]):Option[Long] = {
-    //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
-    sortedRules.find(_.antecedent.subsetOf(transaction)).map(_.consequent)
+  def this(dataset:RDD[Array[Long]], rules:RDD[Rule], numClasses:Int, defaultClass:Long) {
+    // this constructor SORTS the rules in input, while the default one preserves the order of the list
+    this(dataset,
+      rules.sortBy(
+        x => (x.confidence,x.support,x.antecedent.size,x.toString()), ascending = false
+      ).collect().toList,
+      numClasses,
+      defaultClass)
   }
 
-  def predict(transactions:RDD[Set[Long]]):RDD[Option[Long]] = {
+  def predict(transaction:Set[Long]):Long = {
+    //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
+    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).getOrElse(defaultClass)
+  }
+
+  def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
     transactions.map(x => predict(x)) //does not work: Spark does not support nested RDDs ops
   }
 
-  def dBCoverage(input: RDD[Array[Long]]) : L3Model = {
+  def dBCoverage(input: RDD[Array[Long]] = dataset) : L3Model = {
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
     var db = input.map(_.toSet)
-    for (r <- sortedRules) {
+    for (r <- rules) {
       val applicable = db.filter(x => r.antecedent.subsetOf(x))
       if (applicable.isEmpty()) {
         spareBuilder += r
       }
       else {
         val correct = applicable.filter {
-          x => val classLabel = x.find(_ < numClasses); classLabel == this.predict(x)
+          x => val classLabel = x.find(_ < numClasses)
+            classLabel == Some(r.consequent)
         }
         if (!correct.isEmpty()) {
           db = db.subtract(applicable)
@@ -47,22 +55,31 @@ class L3Model(val rules:RDD[Rule], val numClasses:Int) extends java.io.Serializa
       }
     }
 
+    new L3Model(dataset, usedBuilder.result ::: spareBuilder.result, numClasses, defaultClass)
 
-
-    this
   }
 
   override def toString() = {
-    rules.collect().map(_.toString).mkString("\n")
+    rules.map(_.toString).mkString("\n")
   }
+
 }
 
 class L3EnsembleModel(val models:Array[L3Model]) {
 
-  def predict(transaction:Set[Long]):Option[Long] = {
+  def predict(transaction:Set[Long]):Long = {
     /* use majority voting to select a prediction */
-    Try(models.map(_.predict(transaction)).groupBy{case Some(label) => label }.mapValues(_.size).maxBy(_._2)._1).toOption //todo: try is non efficient
+    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1 //todo: try is non efficient
   }
+
+  def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
+    transactions.map(x => predict(x)) //todo: switch to models.map(_.predict(transactions)).majority_voting
+  }
+
+  override def toString() = {
+    models.zipWithIndex.map{case (m ,i) => s"Model $i:\n${m}\n"}.mkString
+  }
+
 }
 
 class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val maxChi2:Double = 3.841){
@@ -112,7 +129,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
       }
     }.filter(r => r.confidence >= minConfidence && r.chi2 <= maxChi2)
 
-    new L3Model(rules)
+    new L3Model(input, rules, numClasses, supClasses.maxBy(_._2)._1)
   }
 
   def train[Item](input: RDD[Array[Item]], isClassLabel:(Item => Boolean)) {
