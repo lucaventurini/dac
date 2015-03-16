@@ -109,7 +109,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
     //model.freqItemsets.map{case (items, sup) => (items.partition(_ < numClasses), sup)}
 
     val antecedents = model.freqItemsets.map{
-      case (items, freq) => val x = items.partition(_ < numClasses);(x._2.toSet,(x._1, freq.toDouble/count))
+      f => val x = f.items.partition(_ < numClasses);(x._2.toSet,(x._1, f.freq.toDouble/count))
     }
     val supAnts = antecedents.filter(_._2._1.isEmpty).map{
       case (ant, (_, sup)) => (ant, sup)
