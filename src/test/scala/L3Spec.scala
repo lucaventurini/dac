@@ -162,7 +162,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
   }
 
   "On Mushroom" should "extract 137 rules, with sup=3000 and conf=0.5" in {
-    val inputFile = "/home/luca/data/mushroom/mushroom.dat"
+    val inputFile = "./src/test/resources/mushroom.dat"
     val all = sc.textFile(inputFile)
     val transactions = all.map(_.split(" ").map(_.toLong))
     val l3 = new L3(numClasses = 3, minSupport = 0.369, minChi2 = 0) //they start from 1, minsup=3000
