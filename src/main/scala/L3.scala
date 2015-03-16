@@ -82,10 +82,10 @@ class L3EnsembleModel(val models:Array[L3Model]) {
 
 }
 
-class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val maxChi2:Double = 3.841){
+class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841){
 
   def train(input: RDD[Array[Long]]):L3EnsembleModel = {
-    val l3 = new L3(numClasses, minSupport, minConfidence, maxChi2)
+    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2)
     val models = Array.fill(numModels)(scala.util.Random.nextLong()).
       map(input.sample(true, 0.01, _)). //todo: variable sample size
       map(x => l3.train(x))
@@ -94,7 +94,7 @@ class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Do
   }
 }
 
-class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val maxChi2:Double = 3.841) extends java.io.Serializable{
+class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841) extends java.io.Serializable{
 
   def train(input: RDD[Array[Long]]): L3Model = {
 
@@ -119,6 +119,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
       case (_, (classLabels, sup)) => (classLabels(0), sup)
     }.collectAsMap()
 
+
     val rules = antecedents.filter(_._2._1.nonEmpty).join(supAnts).map{
       case (ant, ((classLabels, sup), supAnt)) => {
         val supCons = supClasses(classLabels(0))
@@ -127,7 +128,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
           {case (observed, expected) => math.pow((observed - expected), 2) / expected} sum }
         Rule(ant, classLabels(0), sup, sup/supAnt.toDouble, chi2)
       }
-    }.filter(r => r.confidence >= minConfidence && r.chi2 <= maxChi2)
+    }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
 
     new L3Model(input, rules, numClasses, supClasses.maxBy(_._2)._1)
   }

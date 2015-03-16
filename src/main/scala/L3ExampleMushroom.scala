@@ -1,5 +1,6 @@
 import java.io.{File, PrintWriter}
 
+import org.apache.spark.mllib.util.MLUtils._
 import org.apache.spark.{SparkConf, SparkContext}
 
 /**
@@ -14,30 +15,51 @@ object L3ExampleMushroom {
     val all = sc.textFile(inputFile)
 
     val transactions = all.map(_.split(" ").map(_.toLong))
+    val count = transactions.count()
 
-    val l3 = new L3(numClasses = 3, minSupport = 0.369) //they start from 1
+    /* On all the dataset: */
+    val l3 = new L3(numClasses = 3, minSupport = 0.2, minChi2 = 0) //they start from 1, minsup=3000:0.369
     val model=l3.train(transactions)
     println(model)
 
-    val writer = new PrintWriter(new File("/home/luca/data/L3.out"))
+    var writer = new PrintWriter(new File("/home/luca/data/L3.out"))
     writer.write(model.toString())
     writer.close()
 
-    /*val fpg = new FPGrowth()
-    	  .setMinSupport(0.2)
-    	  .setNumPartitions(10)
-    val model = fpg.run(transactions)
 
-    model.freqItemsets.collect().foreach{ itemset => println(itemset._1.mkString("[", ",", "]") + ", " + itemset._2) }
 
-    val numClasses = 2
-    model.freqItemsets.map{case (items, sup) => (items.partition(_ < numClasses), sup)}
+    /* Cross-validation: */
+    val numFolds = 4
+    val cvTrans = kFold(transactions, numFolds, 12345)
+    val measures = cvTrans.map {
+      case (train, test) =>
+        val t0 = System.nanoTime()
+        val model = l3.train(train).dBCoverage()
+        val t1 = System.nanoTime()
+        val labels = test.map(_.find(_ < model.numClasses)) filter (_.nonEmpty) map (_.get)
+        val predictions = model.predict(test.map(_.toSet)) //todo: should we remove the class labels?
+      val t2 = System.nanoTime()
+      val confusionMatrix = labels.zip(predictions).groupBy(x => x).mapValues(_.size).collectAsMap()
+        (confusionMatrix, model.rules.size, (t1-t0)/1e6, (t2-t1)/1e6)
+    }
+    //TODO set params
+    val cvConfusionMatrix = measures.map(_._1).reduce(
+          //(c1, c2) => c1.map{case(k, v) => (k, v+c2(k))}
+          (c1, c2) => (c1.keySet ++ c2.keySet).map(k => (k, c1.getOrElse(k, 0) + c2.getOrElse(k, 0))).toMap
+        ).mapValues(_.toDouble/count)
 
-    val antecedents = model.freqItemsets.map{case (items, sup) => val x = items.partition(_ < numClasses);(x._2.toSet,(x._1, sup))} //cache?
-    val supAnts = antecedents.map(x => (x._1, x._2._2)).reduceByKey(_ + _)
-    val rules = antecedents.filter(!_._2._1.isEmpty).join(supAnts).mapValues(x => (x._1._1(0), x._1._2, x._1._2/x._2.toFloat))
 
-    rules.collect.foreach(x => println(x._1.mkString(", ") + " -> " + x._2._1 + " (" + x._2._2 + ", " + x._2._3 + ")"))*/
+
+    println(s"Confusion Matrix (avg of $numFolds):")
+    println(cvConfusionMatrix.mkString("\n"))
+    println("# of rules: "+measures.map(_._2).sum/measures.size.toDouble)
+    println("Avg time to generate the model: "+measures.map(_._3).sum/measures.size.toDouble)
+    println("Avg time to predict: "+measures.map(_._4).sum/measures.size.toDouble)
+
+
+
+
+
   }
 
 }
