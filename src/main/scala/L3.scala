@@ -37,12 +37,12 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
   def dBCoverage(input: RDD[Array[Long]] = dataset) : L3Model = {
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
-    var db = input.map(_.toSet)
+    var db = input.map(_.toSet).collect()
     //db.cache()
 
     for (r <- rules) {
       val applicable = db.filter(x => r.antecedent.subsetOf(x))
-      if (applicable.isEmpty()) {
+      if (applicable.isEmpty) {
         spareBuilder += r
       }
       else {
@@ -50,8 +50,9 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
           x => val classLabel = x.find(_ < numClasses)
             classLabel == Some(r.consequent)
         }
-        if (!correct.isEmpty()) {
-          db = db.subtract(applicable)
+        if (correct.nonEmpty) {
+          db = db diff applicable
+
           usedBuilder += r
         }
       }
