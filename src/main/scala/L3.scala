@@ -38,6 +38,8 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
     var db = input.map(_.toSet)
+    //db.cache()
+
     for (r <- rules) {
       val applicable = db.filter(x => r.antecedent.subsetOf(x))
       if (applicable.isEmpty()) {
@@ -69,7 +71,7 @@ class L3EnsembleModel(val models:Array[L3Model]) {
 
   def predict(transaction:Set[Long]):Long = {
     /* use majority voting to select a prediction */
-    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1 //todo: try is non efficient
+    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
