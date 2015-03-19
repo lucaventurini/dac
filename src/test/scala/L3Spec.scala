@@ -168,7 +168,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
     val l3 = new L3(numClasses = 3, minSupport = 0.369, minChi2 = 0) //they start from 1, minsup=3000
     val model=l3.train(transactions)
 
-    model.rules should have size 137
+    model.rules.count() should equal(137)
   }
 
 }

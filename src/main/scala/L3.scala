@@ -1,37 +1,68 @@
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
 
+import scala.util.Try
+
 /**
  * Created by luca on 24/02/15.
  */
 
 case class Rule(antecedent:Set[Long], consequent:Long, support:Double, confidence:Double, chi2:Double) {
+
+
+
+
   override def toString() = {
     antecedent.mkString(" ") +f" -> $consequent ($support%.6f, $confidence%.6f, $chi2%.6f)"
   }
 }
 
-class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{
+object Rule {
+
+  def ordering[A <: Rule]: Ordering[A] = {
+    Ordering.by(x => (x.confidence, x.support, x.antecedent.size, x.toString()))
+  }
+
+  implicit def reverseOrdering[A <: Rule]: Ordering[A] = ordering.reverse
+
+}
+
+class L3Model(val dataset:RDD[Array[Long]], var rules:RDD[Rule], val numClasses:Int, val defaultClass:Long, val sort:Boolean = true) extends java.io.Serializable{
 
   //var rules: List[Rule] = rules.sortBy(x => (x.confidence,x.support,x.antecedent.size,x.antecedent.mkString(", ")), ascending = false).collect().toList//todo: lex order is inverted
 
-  def this(dataset:RDD[Array[Long]], rules:RDD[Rule], numClasses:Int, defaultClass:Long) {
-    // this constructor SORTS the rules in input, while the default one preserves the order of the list
-    this(dataset,
-      rules.sortBy(
-        x => (x.confidence,x.support,x.antecedent.size,x.toString()), ascending = false
-      ).collect().toList,
-      numClasses,
-      defaultClass)
-  }
+
+
+
+  if(sort) rules = rules.sortBy(
+    x => (x.confidence,x.support,x.antecedent.size,x.toString()), ascending = false
+  )
+
+
 
   def predict(transaction:Set[Long]):Long = {
-    //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
-    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).getOrElse(defaultClass)
+    val applicable = rules.filter(_.antecedent.subsetOf(transaction))
+      if (applicable.isEmpty()){
+        defaultClass
+      } else applicable.first().consequent
+
+    //rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).getOrElse(defaultClass)
   }
 
-  def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
-    transactions.map(x => predict(x)) //does not work: Spark does not support nested RDDs ops
+  /* Beware : RDD do not keep track of order, so do not rely upon order to keep track of a map,
+  as in Array[Transaction] -> Array[Prediction]
+   */
+  def predict(transactions:RDD[Set[Long]]):RDD[(Set[Long], Long)] = {
+    val matches = rules.cartesian(transactions).map {
+      case (r, t) if(r.antecedent.subsetOf(t))=>(t ->(r, Some(r.consequent)))
+      case (r, t) => (t -> (r, None))
+    }
+     //val predictions =matches .groupByKey().map(_._2.head.getOrElse(defaultClass)) //TODO: groupby does not preserve order!
+     matches.groupByKey().map{case (t, l) => l.filter(_._2.nonEmpty) match {
+        case x if x.nonEmpty => t -> x.maxBy(_._1)._2.getOrElse(defaultClass)
+        case _ => t -> defaultClass
+      } }
+    //transactions.map(x => predict(x)) //does not work: Spark does not support nested RDDs ops
   }
 
   def dBCoverage(input: RDD[Array[Long]] = dataset) : L3Model = {
@@ -58,12 +89,13 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
       }
     }
 
-    new L3Model(dataset, usedBuilder.result ::: spareBuilder.result, numClasses, defaultClass)
+
+    new L3Model(dataset, input.sparkContext.parallelize(usedBuilder.result ::: spareBuilder.result), numClasses, defaultClass, sort=false)
 
   }
 
   override def toString() = {
-    rules.map(_.toString).mkString("\n")
+    rules.map(_.toString).collect().mkString("\n")
   }
 
 }
