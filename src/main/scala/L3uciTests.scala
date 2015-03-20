@@ -19,7 +19,7 @@ object L3uciTests {
     val transactions = all.map(_.split(" ").map(_.toLong))
     val count = transactions.count()
 
-    val l3 = new L3(numClasses = 3, minSupport = 0.2) //they start from 1, minsup=3000:0.369
+    val l3 = new L3(numClasses = 3, minSupport = 0.08) //they start from 1, minsup=3000:0.369
 
 
 
@@ -27,19 +27,19 @@ object L3uciTests {
 
 
     /* Cross-validation: */
-    val numFolds = 2
+    val numFolds = 4
     val cvTrans = kFold(transactions, numFolds, 12345)
     val measures = cvTrans.map {
       case (train, test) =>
         val t0 = System.nanoTime()
         val model = l3.train(train)
         val t1 = System.nanoTime()
-        //val labels = test.map(_.find(_ < model.numClasses)) filter (_.nonEmpty) map (_.get)
+        val labels = test.map(_.find(_ < model.numClasses)) filter (_.nonEmpty) map (_.get)
         val predictions = model.predict(test.map(_.toSet))
         //todo: should we remove the class labels?
         val t2 = System.nanoTime()
-        val confusionMatrix = predictions.map{case (t, p) => (t.find(_ < model.numClasses).get, p)}.groupBy(x => x).mapValues(_.size).collectAsMap()
-        (confusionMatrix, model.rules.count(), (t1-t0)/1e6, (t2-t1)/1e6)
+      val confusionMatrix = labels.zip(predictions).groupBy(x => x).mapValues(_.size).collectAsMap()
+        (confusionMatrix, model.rules.size, (t1-t0)/1e6, (t2-t1)/1e6)
     }
     //TODO set params
     val cvConfusionMatrix = measures.map(_._1).reduce(
