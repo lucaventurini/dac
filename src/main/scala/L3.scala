@@ -11,7 +11,7 @@ case class Rule(antecedent:Set[Long], consequent:Long, support:Double, confidenc
   }
 }
 
-class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{
+class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{ //todo: serialize with Kryo?
 
   //var rules: List[Rule] = rules.sortBy(x => (x.confidence,x.support,x.antecedent.size,x.antecedent.mkString(", ")), ascending = false).collect().toList//todo: lex order is inverted
 
@@ -118,9 +118,12 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
       case (ant, (_, sup)) => (ant, sup)
     }
 
-    val supClasses = antecedents.filter(_._1.isEmpty).map{
-      case (_, (classLabels, sup)) => (classLabels(0), sup)
-    }.collectAsMap()
+    val supClasses = antecedents.lookup(Set()).map{
+      case (classLabels, sup) => (classLabels(0), sup)
+    }.toMap //todo:bottleneck
+    //1st: use broadcast instead of a local map (sends the map only once)
+
+
 
 
     val rules = antecedents.filter(_._2._1.nonEmpty).join(supAnts).map{
