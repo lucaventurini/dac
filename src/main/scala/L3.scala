@@ -68,7 +68,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
 
 }
 
-class L3EnsembleModel(val models:Array[L3Model]) {
+class L3EnsembleModel(val models:Array[L3Model]) extends java.io.Serializable {
 
   def predict(transaction:Set[Long]):Long = {
     /* use majority voting to select a prediction */
@@ -89,12 +89,12 @@ class L3EnsembleModel(val models:Array[L3Model]) {
 
 }
 
-class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841){
+class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val sampleSize:Double = 0.01, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841) extends java.io.Serializable{
 
   def train(input: RDD[Array[Long]]):L3EnsembleModel = {
     val l3 = new L3(numClasses, minSupport, minConfidence, minChi2)
     val models = Array.fill(numModels)(scala.util.Random.nextLong()).
-      map(input.sample(true, 0.01, _)). //todo: variable sample size
+      map(input.sample(true, sampleSize, _)).
       map(x => l3.train(x))
     new L3EnsembleModel(models)
 
