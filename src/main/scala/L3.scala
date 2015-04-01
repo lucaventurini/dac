@@ -79,6 +79,10 @@ class L3EnsembleModel(val models:Array[L3Model]) {
     transactions.map(x => predict(x)) //todo: switch to models.map(_.predict(transactions)).majority_voting
   }
 
+  def dbCoverage() = {
+    new L3EnsembleModel(models.map(_.dBCoverage()))
+  }
+
   override def toString() = {
     models.zipWithIndex.map{case (m ,i) => s"Model $i:\n${m}\n"}.mkString
   }
@@ -95,6 +99,8 @@ class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Do
     new L3EnsembleModel(models)
 
   }
+
+
 }
 
 class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841) extends java.io.Serializable{
