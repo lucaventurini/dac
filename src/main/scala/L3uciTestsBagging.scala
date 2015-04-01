@@ -1,21 +1,21 @@
-import java.io.{FileWriter, File, PrintWriter}
-
+import java.io.{File, FileWriter, PrintWriter}
 
 import org.apache.spark.mllib.util.MLUtils._
 import org.apache.spark.{SparkConf, SparkContext}
 
-import scala.util.Try
-
 /**
  * Created by Luca Venturini on 23/02/15.
  */
-object L3uciTests {
+object L3uciTestsBagging {
 
   def main(args: Array[String]) {
-    val inputFolder = "/home/lucav/data/UCI/test4db/"
+    val inputFolder = "/home/lucav/data/UCI/test5/"
     //val inputFile = "/home/lucav/data/UCI/test1/voting.data" // Should be some file on your system
-    if (args.size < 1) return
+    if (args.size < 4) return
     val inputFile = args(0)
+    val numModels = args(1)
+    val sampleSize = args(2)
+    val minSupp = args(3)
     val conf = new SparkConf().setAppName("L3Local_UCI_v0.2.0").setMaster("local[*]")
     val sc = new SparkContext(conf)
 
@@ -35,7 +35,7 @@ object L3uciTests {
     val numClasses = transactions.map(_.last).max + 1
 
 
-    val l3 = new L3(numClasses = numClasses.toInt, minSupport = 0.01)
+    val l3 = new L3Ensemble(numModels = numModels.toInt, numClasses = numClasses.toInt, minSupport = minSupp.toDouble)
 
 
 
@@ -48,14 +48,14 @@ object L3uciTests {
     val measures = cvTrans.map {
       case (train, test) =>
         val t0 = System.nanoTime()
-        val model = l3.train(train).dBCoverage()
+        val model = l3.train(train).dbCoverage()
         val t1 = System.nanoTime()
-        val labels = test.map(_.find(_ < model.numClasses)) filter (_.nonEmpty) map (_.get)
+        val labels = test.map(_.find(_ < l3.numClasses)) filter (_.nonEmpty) map (_.get)
         val predictions = model.predict(test.map(_.toSet))
         //todo: should we remove the class labels?
         val t2 = System.nanoTime()
         val confusionMatrix = labels.zip(predictions).groupBy(x => x).mapValues(_.size).collectAsMap() //todo:put a countByKey
-        (confusionMatrix, model.rules.size, (t1 - t0) / 1e6, (t2 - t1) / 1e6)
+        (confusionMatrix, model.models.map(_.rules.size).sum, (t1 - t0) / 1e6, (t2 - t1) / 1e6)
     }
     //TODO set params
     val cvConfusionMatrix = measures.map(_._1).reduce(
@@ -78,7 +78,7 @@ object L3uciTests {
 
 
     val inf = new File(args(0))
-    val writer = new PrintWriter(new FileWriter(inputFolder+"res_dbcov.csv", true))
+    val writer = new PrintWriter(new FileWriter(inputFolder+s"res_bag_dbcov_${numModels}_${sampleSize}_${minSupp}.csv", true))
     writer.println(f"${inf.getName}, $accuracy%.4f, $numRules%.4f, $trainTime%.0f, $predTime%.0f")
     writer.close()
 
