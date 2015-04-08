@@ -55,7 +55,8 @@ object L3uciTestsBagging {
         //todo: should we remove the class labels?
         val t2 = System.nanoTime()
         val confusionMatrix = labels.zip(predictions).groupBy(x => x).mapValues(_.size).collectAsMap() //todo:put a countByKey
-        (confusionMatrix, model.models.map(_.rules.size).sum, (t1 - t0) / 1e6, (t2 - t1) / 1e6)
+        val accuracy = confusionMatrix.filterKeys(x => x._1 == x._2).map(_._2).sum.toDouble / test.count
+        (confusionMatrix, model.models.map(_.rules.size).sum, (t1 - t0) / 1e6, (t2 - t1) / 1e6, accuracy)
     }
     //TODO set params
     val cvConfusionMatrix = measures.map(_._1).reduce(
@@ -66,11 +67,15 @@ object L3uciTestsBagging {
 
 
     println(s"Confusion Matrix for $inputFile (avg of $numFolds):")
-    val accuracy = cvConfusionMatrix.filterKeys(x => x._1 == x._2).map(_._2).sum
+    val accuracies = measures.map(_._5)
+    //val accuracy = cvConfusionMatrix.filterKeys(x => x._1 == x._2).map(_._2).sum
+    val accuracy = accuracies.sum / numFolds
+    val variance = (accuracies.map(x => math.pow(x - accuracy, 2)).sum -
+      math.pow(accuracies.map(_ - accuracy).sum, 2)/numFolds) / numFolds
     println(cvConfusionMatrix.mkString("\n"))
     val numRules: Double = measures.map(_._2).sum / measures.size.toDouble
     println("# of rules: " + numRules)
-    println("Accuracy: " + accuracy)
+    println(s"Accuracy: $accuracy ,variance: $variance")
     val trainTime: Double = measures.map(_._3).sum / measures.size.toDouble
     println("Avg time to generate the model: " + trainTime)
     val predTime: Double = measures.map(_._4).sum / measures.size.toDouble
@@ -79,7 +84,7 @@ object L3uciTestsBagging {
 
     val inf = new File(args(0))
     val writer = new PrintWriter(new FileWriter(inputFolder+s"res_bag_dbcov_${numModels}_${sampleSize}_${minSupp}.csv", true))
-    writer.println(f"${inf.getName}, $accuracy%.4f, $numRules%.4f, $trainTime%.0f, $predTime%.0f")
+    writer.println(f"${inf.getName}, $accuracy%.4f, $numRules%.4f, $trainTime%.0f, $predTime%.0f, ${accuracies.map(x => f"$x%.4f").mkString(", ")}")
     writer.close()
 
 
