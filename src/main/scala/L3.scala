@@ -111,7 +111,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
 
     val fpg = new FPGrowth()
       .setMinSupport(minSupport)
-      //.setNumPartitions(10) //TODO
+      .setNumPartitions(4*2) //TODO
     val model = fpg.run(input)
 
 
