@@ -9,7 +9,7 @@ import org.apache.spark.{SparkConf, SparkContext}
 object L3uciTestsBagging {
 
   def main(args: Array[String]) {
-    val inputFolder = "/home/lucav/data/UCI/test5/"
+    val inputFolder = "/home/lucav/data/UCI/testLittle/"
     //val inputFile = "/home/lucav/data/UCI/test1/voting.data" // Should be some file on your system
     if (args.size < 4) return
     val inputFile = args(0)
@@ -35,7 +35,7 @@ object L3uciTestsBagging {
     val numClasses = transactions.map(_.last).max + 1
 
 
-    val l3 = new L3Ensemble(numModels = numModels.toInt, numClasses = numClasses.toInt, minSupport = minSupp.toDouble)
+    val l3 = new L3Ensemble(numModels = numModels.toInt, numClasses = numClasses.toInt, minSupport = minSupp.toDouble, sampleSize = sampleSize.toDouble)
 
 
 
