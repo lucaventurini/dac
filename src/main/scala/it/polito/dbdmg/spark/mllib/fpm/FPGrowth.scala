@@ -40,7 +40,7 @@ import scala.reflect.ClassTag
  * @tparam Item item type
  */
 @Experimental
-class FPGrowthModel[Item: ClassTag](val freqItemsets: RDD[FreqItemset[Item]]) extends Serializable
+class FPGrowthModel[Item: ClassTag](val freqItemsets: Iterable[FreqItemset[Item]]) extends Serializable
 
 /**
  * :: Experimental ::
@@ -91,13 +91,10 @@ class FPGrowth private (
    * @param data input data set, each element contains a transaction
    * @return an [[FPGrowthModel]]
    */
-  def run[Item: ClassTag](data: RDD[Array[Item]]): FPGrowthModel[Item] = {
-    if (data.getStorageLevel == StorageLevel.NONE) {
-      logWarning("Input data is not cached.")
-    }
-    val count = data.count()
+  def run[Item: ClassTag](data: Iterable[Array[Item]]): FPGrowthModel[Item] = {
+    val count = data.size
     val minCount = math.ceil(minSupport * count).toLong
-    val numParts = if (numPartitions > 0) numPartitions else data.partitions.length
+    val numParts = 1
     val partitioner = new HashPartitioner(numParts)
     val freqItems = genFreqItems(data, minCount, partitioner)
     val freqItemsets = genFreqItemsets(data, minCount, freqItems, partitioner)
@@ -116,7 +113,7 @@ class FPGrowth private (
    * @return array of frequent pattern ordered by their frequencies
    */
   private def genFreqItems[Item: ClassTag](
-      data: RDD[Array[Item]],
+      data: Iterable[Array[Item]],
       minCount: Long,
       partitioner: Partitioner): Array[Item] = {
     data.flatMap { t =>
@@ -125,10 +122,9 @@ class FPGrowth private (
         throw new SparkException(s"Items in a transaction must be unique but got ${t.toSeq}.")
       }
       t
-    }.map(v => (v, 1L))
-      .reduceByKey(partitioner, _ + _)
+    }.groupBy(x => x).mapValues(_.size)
       .filter(_._2 >= minCount)
-      .collect()
+      .toArray
       .sortBy(-_._2)
       .map(_._1)
   }
@@ -142,21 +138,20 @@ class FPGrowth private (
    * @return an RDD of (frequent itemset, count)
    */
   private def genFreqItemsets[Item: ClassTag](
-      data: RDD[Array[Item]],
+      data: Iterable[Array[Item]],
       minCount: Long,
       freqItems: Array[Item],
-      partitioner: Partitioner): RDD[FreqItemset[Item]] = {
+      partitioner: Partitioner): Iterable[FreqItemset[Item]] = {
     val itemToRank = freqItems.zipWithIndex.toMap
     data.flatMap { transaction =>
       genCondTransactions(transaction, itemToRank, partitioner)
-    }.aggregateByKey(new FPTree[Int], partitioner.numPartitions)(
-      (tree, transaction) => tree.add(transaction, 1L),
+    }.aggregate(new FPTree[Int])(
+      (tree, transaction) => tree.add(transaction._2, 1L),
       (tree1, tree2) => tree1.merge(tree2))
-    .flatMap { case (part, tree) =>
-      tree.extract(minCount, x => partitioner.getPartition(x) == part)
-    }.map { case (ranks, count) =>
+    .extract(minCount)
+    .map { case (ranks, count) =>
       new FreqItemset(ranks.map(i => freqItems(i)).toArray, count)
-    }
+    }.toIterable
   }
 
   /**
@@ -179,7 +174,7 @@ class FPGrowth private (
     while (i >= 0) {
       val item = filtered(i)
       val part = partitioner.getPartition(item)
-      if (!output.contains(part)) {
+      if (!output.contains(part)) { //todo: eliminate partitions
         output(part) = filtered.slice(0, i + 1)
       }
       i -= 1
