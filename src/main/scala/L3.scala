@@ -1,3 +1,4 @@
+import it.polito.dbdmg.spark.mllib.fpm
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
 
@@ -109,7 +110,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
 
     val count = input.count()
 
-    val fpg = new FPGrowth()
+    val fpg = new fpm.FPGrowth()
       .setMinSupport(minSupport)
       .setNumPartitions(4*2) //TODO
     val model = fpg.run(input)

@@ -26,7 +26,7 @@ object L3ExampleVoting {
     writer.write(model.toString())
     writer.close()
 
-    /*val fpg = new FPGrowth()
+    /*val fpg = new it.polito.dbdmg.spark.mllib.fpm.FPGrowth()
     	  .setMinSupport(0.2)
     	  .setNumPartitions(10)
     val model = fpg.run(transactions)
