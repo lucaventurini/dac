@@ -48,7 +48,7 @@ object L3uciTestsBagging {
     val measures = cvTrans.map {
       case (train, test) =>
         val t0 = System.nanoTime()
-        val model = l3.train(train).dbCoverage()
+        val model = l3.train(train)
         val t1 = System.nanoTime()
         val labels = test.map(_.find(_ < l3.numClasses)) filter (_.nonEmpty) map (_.get)
         val predictions = model.predict(test.map(_.toSet))
