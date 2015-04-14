@@ -2,6 +2,8 @@ import it.polito.dbdmg.spark.mllib.fpm.{FPGrowth => FPGrowthLocal}
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
 
+import scala.util.Random
+
 /**
  * Created by luca on 24/02/15.
  */
@@ -124,11 +126,11 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
 
 }
 
-class L3EnsembleModel(val models:RDD[L3LocalModel]) extends java.io.Serializable {
+class L3EnsembleModel(val models:Array[L3LocalModel]) extends java.io.Serializable {
 
   def predict(transaction:Set[Long]):Long = {
     /* use majority voting to select a prediction */
-    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).max()(Ordering.by(_._2))._1
+    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
@@ -140,7 +142,7 @@ class L3EnsembleModel(val models:RDD[L3LocalModel]) extends java.io.Serializable
   }
 
   override def toString() = {
-    models.zipWithIndex.map{case (m ,i) => s"Model $i:\n${m}\n"}.collect().mkString
+    models.zipWithIndex.map{case (m ,i) => s"Model $i:\n${m}\n"}.mkString
   }
 
 }
@@ -157,12 +159,13 @@ class L3Ensemble (val numClasses:Int,
     // N.B: numPartitions = numModels
     val l3 = new L3(numClasses, minSupport, minConfidence, minChi2)
     new L3EnsembleModel(
-      input.repartition(numModels). //TODO: choose partitioner
-        sample(withReplacement, numModels*sampleSize). //TODO: stratified sampling
+      input.keyBy(_ => Random.nextInt()).
+        sample(withReplacement, numModels*sampleSize).//TODO: stratified sampling
+        repartition(numModels).
         mapPartitions{ samples =>
-        val s = samples.toIterable
+        val s = samples.toIterable.map(_._2)
         Iterator(l3.train(s).dBCoverage(s))
-      }
+      }.collect()
     )
   }
 

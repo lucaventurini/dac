@@ -296,6 +296,12 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     modelbag.toString().split("\n").size should be >= 4
   }
 
+  it should "predict an RDD" in {
+    modelbag.predict(sc.parallelize(List(Set(10L,12L)))).count() should equal(1)
+    modelbag.predict(sc.parallelize(List(Set(10L,12L)))).first() should (equal(0) or equal(1))
+
+  }
+
   "On Mushroom" should "extract 137 rules, with sup=3000 and conf=0.5" in {
     val inputFile = "./src/test/resources/mushroom.dat"
     val all = sc.textFile(inputFile)
