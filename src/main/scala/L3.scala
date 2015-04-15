@@ -30,7 +30,8 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
     predictOption(transaction).getOrElse(defaultClass)
   }
   def predictOption(transaction:Set[Long]):Option[Long] = {
-    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent)
+    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).
+      orElse(rulesIIlevel.find(_.antecedent.subsetOf(transaction)).map(_.consequent))
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
