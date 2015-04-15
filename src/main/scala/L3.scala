@@ -27,7 +27,10 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
 
   def predict(transaction:Set[Long]):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
-    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).getOrElse(defaultClass)
+    predictOption(transaction).getOrElse(defaultClass)
+  }
+  def predictOption(transaction:Set[Long]):Option[Long] = {
+    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent)
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
@@ -128,13 +131,27 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
 
 class L3EnsembleModel(val models:Array[L3LocalModel]) extends java.io.Serializable {
 
+  // choose default class by majority
+  lazy val defaultClass : Long = models.map(_.defaultClass).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
+
   def predict(transaction:Set[Long]):Long = {
     /* use majority voting to select a prediction */
-    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
+    predictMajorityOption(transaction)
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
     transactions.map(x => predict(x)) //todo: switch to models.map(_.predict(transactions)).majority_voting
+  }
+
+  def predictMajority(transaction:Set[Long]):Long = {
+    /* use majority voting to select a prediction */
+    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
+  }
+
+  def predictMajorityOption(transaction:Set[Long]):Long = {
+    /* use majority voting to select a prediction */
+    val votes = models.map(_.predictOption(transaction)).filter(_.nonEmpty).groupBy{label => label }.mapValues(_.size)
+    if (votes.nonEmpty) votes.maxBy(_._2)._1.getOrElse(defaultClass) else defaultClass
   }
 
   def dbCoverage(dataset:Iterable[Array[Long]]) = {
