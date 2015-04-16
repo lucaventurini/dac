@@ -1,4 +1,4 @@
-name := "L3_Spark"
+name := "L3_Spark_local"
 
 version := "0.1"
 
