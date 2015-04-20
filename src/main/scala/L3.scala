@@ -15,11 +15,21 @@ object Rule {
   implicit def orderingByConfDesc[A <: Rule]: Ordering[A] =
     orderingByConf.reverse
 
+
+
 }
 
-case class Rule(antecedent:Set[Long], consequent:Long, support:Double, confidence:Double, chi2:Double) {
+case class Rule(antecedent:Array[Long], consequent:Long, support:Double, confidence:Double, chi2:Double) {
   override def toString() = {
     antecedent.mkString(" ") +f" -> $consequent ($support%.6f, $confidence%.6f, $chi2%.6f)"
+  }
+
+  def appliesTo(x : Array[Long]) : Boolean = {
+    antecedent.forall(x.contains(_))
+  }
+
+  @deprecated def appliesTo(x : Set[Long]) : Boolean = {
+    antecedent.forall(x.contains(_))
   }
 }
 
@@ -30,8 +40,8 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
     predictOption(transaction).getOrElse(defaultClass)
   }
   def predictOption(transaction:Set[Long]):Option[Long] = {
-    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).
-      orElse(rulesIIlevel.find(_.antecedent.subsetOf(transaction)).map(_.consequent))
+    rules.find(_.appliesTo(transaction)).map(_.consequent).
+      orElse(rulesIIlevel.find(_.appliesTo(transaction)).map(_.consequent))
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
@@ -41,11 +51,11 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
   def dBCoverage(input: Iterable[Array[Long]]) : L3LocalModel = {
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
-    var db = input.map(_.toSet).toSeq
+    var db = input.toSeq
     //db.cache()
 
     for (r <- rules) {
-      val applicable = db.filter(x => r.antecedent.subsetOf(x))
+      val applicable = db.filter(x => r.appliesTo(x))
       if (applicable.isEmpty) {
         spareBuilder += r
       }
@@ -89,7 +99,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
 
   def predict(transaction:Set[Long]):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
-    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).getOrElse(defaultClass)
+    rules.find(_.appliesTo(transaction)).map(_.consequent).getOrElse(defaultClass)
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
@@ -99,11 +109,11 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
   def dBCoverage(input: RDD[Array[Long]] = dataset) : L3Model = {
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
-    var db = input.map(_.toSet).collect()
+    var db = input.collect()
     //db.cache()
 
     for (r <- rules) {
-      val applicable = db.filter(x => r.antecedent.subsetOf(x))
+      val applicable = db.filter(x => r.appliesTo(x))
       if (applicable.isEmpty) {
         spareBuilder += r
       }
@@ -181,7 +191,7 @@ class L3Ensemble (val numClasses:Int,
         sample(withReplacement, numModels*sampleSize).//TODO: stratified sampling
         repartition(numModels).
         mapPartitions{ samples =>
-        val s = samples.toIterable.map(_._2)
+        val s = samples.toIterable.map(_._2) //todo: toArray ?
         Iterator(l3.train(s).dBCoverage(s))
       }.collect()
     )
@@ -224,7 +234,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
         val chi2 = count * {List(sup, supAnt - sup, supCons - sup, 1 - supAnt - supCons + sup) zip
           List(supAnt * supCons, supAnt * (1 - supCons), (1 - supAnt) * supCons, (1 - supAnt) * (1 - supCons)) map
           {case (observed, expected) => math.pow((observed - expected), 2) / expected} sum }
-        Rule(ant, classLabels(0), sup, sup/supAnt.toDouble, chi2)
+        Rule(ant.toArray, classLabels(0), sup, sup/supAnt.toDouble, chi2) //todo: stop using sets
       }
     }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
 
@@ -267,7 +277,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
         val chi2 = count * {List(sup, supAnt - sup, supCons - sup, 1 - supAnt - supCons + sup) zip
           List(supAnt * supCons, supAnt * (1 - supCons), (1 - supAnt) * supCons, (1 - supAnt) * (1 - supCons)) map
           {case (observed, expected) => math.pow((observed - expected), 2) / expected} sum }
-        Rule(ant, classLabels(0), sup, sup/supAnt.toDouble, chi2)
+        Rule(ant.toArray, classLabels(0), sup, sup/supAnt.toDouble, chi2) //todo: stop using sets
       }
     }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
 
