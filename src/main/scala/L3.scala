@@ -60,7 +60,7 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
         spareBuilder += r
       }
       else {
-        val correct = applicable.filter {
+        val correct = applicable.find {
           x => val classLabel = x.find(_ < numClasses)
             classLabel == Some(r.consequent)
         }
