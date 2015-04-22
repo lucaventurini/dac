@@ -16,7 +16,7 @@ object L3uciTestsBagging {
     val numModels = args(1)
     val sampleSize = args(2)
     val minSupp = args(3)
-    val conf = new SparkConf().setAppName("L3Local_UCI_v0.2.0").setMaster("local[8]").set("spark.executor.memory", "1g")
+    val conf = new SparkConf().setAppName("L3Local_UCI_v0.2.0").setMaster("local[8]")
     val sc = new SparkContext(conf)
 
 
