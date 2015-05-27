@@ -101,11 +101,13 @@ private[fpm] class FPTree[T] extends Serializable {
   /** Extracts all patterns with valid suffix and minimum count. */
   def extract(
       minCount: Long,
-      validateSuffix: T => Boolean = _ => true): Iterator[(List[T], Long)] = {
+      maxLength: Int,
+      validateSuffix: T => Boolean = _ => true
+      ): Iterator[(List[T], Long)] = {
     summaries.iterator.flatMap { case (item, summary) =>
-      if (validateSuffix(item) && summary.count >= minCount) {
+      if (maxLength > 0 && validateSuffix(item) && summary.count >= minCount) {
         Iterator.single((item :: Nil, summary.count)) ++
-          project(item).extract(minCount).map { case (t, c) =>
+          project(item).extract(minCount, maxLength-1).map { case (t, c) =>
             (item :: t, c)
           }
       } else {

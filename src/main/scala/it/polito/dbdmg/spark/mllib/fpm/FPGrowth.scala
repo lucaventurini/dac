@@ -148,7 +148,7 @@ class FPGrowth private (
     }.aggregate(new FPTree[Int])(
       (tree, transaction) => tree.add(transaction._2, 1L),
       (tree1, tree2) => tree1.merge(tree2))
-    .extract(minCount)
+    .extract(minCount, 4)
     .map { case (ranks, count) =>
       new FreqItemset(ranks.map(i => freqItems(i)).toArray, count)
     }.toIterable

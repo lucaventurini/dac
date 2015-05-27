@@ -192,7 +192,8 @@ class L3Ensemble (val numClasses:Int,
         repartition(numModels).
         mapPartitions{ samples =>
         val s = samples.toIterable.map(_._2) //todo: toArray ?
-        Iterator(l3.train(s).dBCoverage(s))
+        val model: L3LocalModel = l3.train(s).dBCoverage(s)
+        Iterator(model)
       }.collect()
     )
   }

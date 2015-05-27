@@ -103,7 +103,7 @@ class FPTreeSuite extends FunSuite {
       .add(Seq("b"))
       .add(Seq("b", "n"))
 
-    val freqItemsets = tree.extract(3L).map { case (items, count) =>
+    val freqItemsets = tree.extract(3L, 5000).map { case (items, count) =>
       (items.toSet, count)
     }.toSet
     val expected = Set(
