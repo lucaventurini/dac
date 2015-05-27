@@ -285,6 +285,10 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
                                                       |22 -> 0 (0.333333, 0.500000, 1.500000)""".stripMargin.split("\n"))
   }
 
+  it should "not save spare rules if asked so" in {
+    model.dBCoverage(List(Array[Long](1, 20, 21, 22)), saveSpare = false).rulesIIlevel should have size 0
+  }
+
 
   lazy val modelbag = new L3Ensemble(numClasses = 2, numModels = 2).train(sc.parallelize(Seq.fill(500)(Array(math.round(Random.nextFloat()).toLong, 2+(10*Random.nextDouble()).round, 13, 14))))
 

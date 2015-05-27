@@ -48,7 +48,7 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
     transactions.map(x => predict(x))
   }
 
-  def dBCoverage(input: Iterable[Array[Long]]) : L3LocalModel = {
+  def dBCoverage(input: Iterable[Array[Long]], saveSpare: Boolean = true) : L3LocalModel = {
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
     var db = input.toSeq
@@ -57,7 +57,7 @@ class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numCla
     for (r <- rules) {
       val applicable = db.filter(x => r.appliesTo(x))
       if (applicable.isEmpty) {
-        spareBuilder += r
+        if (saveSpare)spareBuilder += r
       }
       else {
         val correct = applicable.find {
