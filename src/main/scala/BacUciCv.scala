@@ -1,22 +1,22 @@
 import java.io.{File, FileWriter, PrintWriter}
 
+import it.polito.dbdmg.ml.L3Ensemble
 import org.apache.spark.mllib.util.MLUtils._
 import org.apache.spark.{SparkConf, SparkContext}
 
 /**
  * Created by Luca Venturini on 23/02/15.
  */
-object L3uciTestsBagging {
+object BacUciCv {
 
   def main(args: Array[String]) {
-    val inputFolder = "./"
-    //val inputFile = "/home/lucav/data/UCI/test1/voting.data" // Should be some file on your system
+
     if (args.size < 4) return
     val inputFile = args(0)
     val numModels = args(1)
     val sampleSize = args(2)
     val minSupp = args(3)
-    val conf = new SparkConf().setAppName("L3Local_UCI_v0.2.0").setMaster("local[8]")
+    val conf = new SparkConf().setAppName("BAC_UCI_CV_v0.2.0")
     val sc = new SparkContext(conf)
 
 
@@ -52,7 +52,7 @@ object L3uciTestsBagging {
         val t1 = System.nanoTime()
         val labels = test.map(_.find(_ < l3.numClasses)) filter (_.nonEmpty) map (_.get)
         val predictions = model.predict(test.map(_.toSet))
-        //todo: should we remove the class labels?
+
         val t2 = System.nanoTime()
         val confusionMatrix = labels.zip(predictions).groupBy(x => x).mapValues(_.size).collectAsMap() //todo:put a countByKey
         val accuracy = confusionMatrix.filterKeys(x => x._1 == x._2).map(_._2).sum.toDouble / test.count
@@ -95,10 +95,9 @@ object L3uciTestsBagging {
     println("Avg time to predict: " + predTime)
 
 
-    val inf = new File(args(0))
-    val writer = new PrintWriter(new FileWriter(inputFolder+s"res_bag_dbcov_${numModels}_${sampleSize}_${minSupp}.csv", true))
-    writer.println(f"${inf.getName}, $accuracy%.4f, $numRules%.4f, $numRulesII%.4f, $numItemsInRules%.4f, $trainTime%.0f, $predTime%.0f, ${accuracies.map(x => f"$x%.4f").mkString(", ")}")
-    writer.close()
+//    val inf = new File(args(0))
+//    println(s"Results of crossvalidation with ${numModels} models, sample size: ${sampleSize}, min supp: ${minSupp}")
+//    println(f"${inf.getName}, $accuracy%.4f, $numRules%.4f, $numRulesII%.4f, $numItemsInRules%.4f, $trainTime%.0f, $predTime%.0f, ${accuracies.map(x => f"$x%.4f").mkString(", ")}")
 
 
 

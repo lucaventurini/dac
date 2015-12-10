@@ -1,3 +1,5 @@
+package it.polito.dbdmg.ml
+
 import it.polito.dbdmg.spark.mllib.fpm.{FPGrowth => FPGrowthLocal}
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
