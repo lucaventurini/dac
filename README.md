@@ -35,11 +35,11 @@ val numClasses = 3
 val minSupport = 0.1
 val sampleSize = 0.1
 
-val model = new L3Ensemble(numModels = numModels.toInt, numClasses = numClasses.toInt, minSupport = minSupp.toDouble, sampleSize = sampleSize.toDouble)
+val model = new L3Ensemble(numModels = numModels, numClasses = numClasses, minSupport = minSupport, sampleSize = sampleSize)
 
 // Evaluate model on test instances and compute test error
 val labelAndPreds = testData.map { point =>
-  label = point.first //predict uses the least integer in the row as class label,
+  label = point.min //predict uses the least integer in the row as class label,
   val prediction = model.predict(point) //so be sure your record is structured accordingly
   (point.label, prediction)
 }
@@ -55,7 +55,7 @@ The project uses sbt to compile & build the BAC tool. The following command down
 
 	sbt package
 
-The generated jar file, contaning BAC, is in `target/scala-2.10/bac_2.10-0.2.jar`
+The generated jar file, containing BAC, is in `target/scala-2.10/bac_2.10-0.2.jar`
 
 The jar file bac_2.10-0.2.jar includes also all the needed dependencies. Hence, no libraries need to be uploaded on the Hadoop cluster in order to run BAC.
 
