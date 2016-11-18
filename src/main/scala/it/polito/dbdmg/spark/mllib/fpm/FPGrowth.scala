@@ -32,91 +32,119 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
+import it.polito.dbdmg.ml.Rule
+
+
 /**
- * :: Experimental ::
- *
- * Model trained by [[FPGrowth]], which holds frequent itemsets.
- * @param freqItemsets frequent itemset, which is an RDD of [[FreqItemset]]
- * @tparam Item item type
- */
+  * :: Experimental ::
+  *
+  * Model trained by [[FPGrowth]], which holds frequent itemsets.
+  * @param freqItemsets frequent itemset, which is an RDD of [[FreqItemset]]
+  * @tparam Item item type
+  */
 @Experimental
 class FPGrowthModel[Item: ClassTag](val freqItemsets: Iterable[FreqItemset[Item]]) extends Serializable
 
 /**
- * :: Experimental ::
- *
- * A parallel FP-growth algorithm to mine frequent itemsets. The algorithm is described in
- * [[http://dx.doi.org/10.1145/1454008.1454027 Li et al., PFP: Parallel FP-Growth for Query
- *  Recommendation]]. PFP distributes computation in such a way that each worker executes an
- * independent group of mining tasks. The FP-Growth algorithm is described in
- * [[http://dx.doi.org/10.1145/335191.335372 Han et al., Mining frequent patterns without candidate
- *  generation]].
- *
- * @param minSupport the minimal support level of the frequent pattern, any pattern appears
- *                   more than (minSupport * size-of-the-dataset) times will be output
- * @param numPartitions number of partitions used by parallel FP-growth
- *
- * @see [[http://en.wikipedia.org/wiki/Association_rule_learning Association rule learning
- *       (Wikipedia)]]
- */
+  * :: Experimental ::
+  *
+  * A parallel FP-growth algorithm to mine frequent itemsets. The algorithm is described in
+  * [[http://dx.doi.org/10.1145/1454008.1454027 Li et al., PFP: Parallel FP-Growth for Query
+  *  Recommendation]]. PFP distributes computation in such a way that each worker executes an
+  * independent group of mining tasks. The FP-Growth algorithm is described in
+  * [[http://dx.doi.org/10.1145/335191.335372 Han et al., Mining frequent patterns without candidate
+  *  generation]].
+  *
+  * @param minSupport the minimal support level of the frequent pattern, any pattern appears
+  *                   more than (minSupport * size-of-the-dataset) times will be output
+  * @param numPartitions number of partitions used by parallel FP-growth
+  *
+  * @see [[http://en.wikipedia.org/wiki/Association_rule_learning Association rule learning
+  *       (Wikipedia)]]
+  */
 @Experimental
-class FPGrowth private (
-    private var minSupport: Double,
-    private var numPartitions: Int) extends Logging with Serializable {
+class FPGrowth[Item] private (
+                               private var minSupport: Double,
+                               private var numPartitions: Int,
+                               //private var class2Index: scala.collection.immutable.Map[Item, Int],
+                               private var minConfidence: Double = 0.5,
+                               private var minChi2: Double = 3.841) extends Logging with Serializable {
 
   /**
-   * Constructs a default instance with default parameters {minSupport: `0.3`, numPartitions: same
-   * as the input data}.
-   */
+    * Constructs a default instance with default parameters {minSupport: `0.3`, numPartitions: same
+    * as the input data}.
+    */
   def this() = this(0.3, -1)
 
   /**
-   * Sets the minimal support level (default: `0.3`).
-   */
+    * Sets the minimal support level (default: `0.3`).
+    */
   def setMinSupport(minSupport: Double): this.type = {
     this.minSupport = minSupport
     this
   }
 
   /**
-   * Sets the number of partitions used by parallel FP-growth (default: same as input data).
-   */
+    * Sets the number of partitions used by parallel FP-growth (default: same as input data).
+    */
   def setNumPartitions(numPartitions: Int): this.type = {
     this.numPartitions = numPartitions
     this
   }
 
+  /*def setClass2Index(class2Index: scala.collection.immutable.Map[Item, Int]): this.type = {
+    this.class2Index = class2Index
+    this
+  }*/
+
+  def setMinConfidence(minConfidence: Double): this.type = {
+    this.minConfidence = minConfidence
+    this
+  }
+
+  def setMinChi2(minChi2: Double): this.type = {
+    this.minChi2 = minChi2
+    this
+  }
+
+
   /**
-   * Computes an FP-Growth model that contains frequent itemsets.
-   * @param data input data set, each element contains a transaction
-   * @return an [[FPGrowthModel]]
-   */
-  def run[Item: ClassTag](data: Iterable[Array[Item]]): FPGrowthModel[Item] = {
+    * Computes an Associative Classifier that contains frequent itemsets with
+    * a class label, based on FP-Growth
+    * @param data input data set, each element contains a transaction
+    * @return an [[FPGrowthModel]]
+    */
+  def run[Item: ClassTag](data: Iterable[(Array[Item], Item)],
+                          classCount: scala.collection.immutable.Map[Item, Int]): Iterable[Rule[Item]] = {
     val count = data.size
     val minCount = math.ceil(minSupport * count).toLong
     val numParts = 1
     val partitioner = new HashPartitioner(numParts)
     val freqItems = genFreqItems(data, minCount, partitioner)
-    val freqItemsets = genFreqItemsets(data, minCount, freqItems, partitioner)
-    new FPGrowthModel(freqItemsets)
+    //val freqItemsets = genFreqItemsets(data, minCount, freqItems, partitioner)
+    val rules = genAssocRules(data, minCount, freqItems, partitioner, classCount, count)
+    rules
   }
-/*
-  def run[Item, Basket <: JavaIterable[Item]](data: JavaRDD[Basket]): it.polito.dbdmg.spark.mllib.fpm.FPGrowthModel[Item] = {
-    implicit val tag = fakeClassTag[Item]
-    run(data.rdd.map(_.asScala.toArray))
-  }*/
+
+
+  /*
+    def run[Item, Basket <: JavaIterable[Item]](data: JavaRDD[Basket]): it.polito.dbdmg.spark.mllib.fpm.FPGrowthModel[Item] = {
+      implicit val tag = fakeClassTag[Item]
+      run(data.rdd.map(_.asScala.toArray))
+    }*/
+
 
   /**
-   * Generates frequent items by filtering the input data using minimal support level.
-   * @param minCount minimum count for frequent itemsets
-   * @param partitioner partitioner used to distribute items
-   * @return array of frequent pattern ordered by their frequencies
-   */
+    * Generates frequent items by filtering the input data using minimal support level.
+    * @param minCount minimum count for frequent itemsets
+    * @param partitioner partitioner used to distribute items
+    * @return array of frequent pattern ordered by their frequencies
+    */
   private def genFreqItems[Item: ClassTag](
-      data: Iterable[Array[Item]],
-      minCount: Long,
-      partitioner: Partitioner): Array[Item] = {
-    data.flatMap { t =>
+                                            data: Iterable[(Array[Item], Item)],
+                                            minCount: Long,
+                                            partitioner: Partitioner): Array[Item] = {
+    data.map(_._1).flatMap { t =>
       val uniq = t.toSet
       if (t.size != uniq.size) {
         throw new SparkException(s"Items in a transaction must be unique but got ${t.toSeq}.")
@@ -130,76 +158,102 @@ class FPGrowth private (
   }
 
   /**
-   * Generate frequent itemsets by building FP-Trees, the extraction is done on each partition.
-   * @param data transactions
-   * @param minCount minimum count for frequent itemsets
-   * @param freqItems frequent items
-   * @param partitioner partitioner used to distribute transactions
-   * @return an RDD of (frequent itemset, count)
-   */
-  private def genFreqItemsets[Item: ClassTag](
-      data: Iterable[Array[Item]],
-      minCount: Long,
-      freqItems: Array[Item],
-      partitioner: Partitioner): Iterable[FreqItemset[Item]] = {
-    val itemToRank = freqItems.zipWithIndex.toMap
-    data.flatMap { transaction =>
-      genCondTransactions(transaction, itemToRank, partitioner)
-    }.aggregate(new FPTree[Int])(
-      (tree, transaction) => tree.add(transaction._2, 1L),
-      (tree1, tree2) => tree1.merge(tree2))
-    .extract(minCount, 4)
-    .map { case (ranks, count) =>
-      new FreqItemset(ranks.map(i => freqItems(i)).toArray, count)
-    }.toIterable
+    * Generates frequent items by filtering the input data using minimal support level.
+    * @param minCount minimum count for frequent itemsets
+    * @param partitioner partitioner used to distribute items
+    * @return array of frequent pattern ordered by their frequencies
+    */
+  private def genGainItems[Item: ClassTag](
+                                            data: Iterable[(Array[Item], Item)],
+                                            minCount: Long,
+                                            partitioner: Partitioner): Array[Item] = {
+    data.map(_._1).flatMap { t =>
+      val uniq = t.toSet
+      if (t.size != uniq.size) {
+        throw new SparkException(s"Items in a transaction must be unique but got ${t.toSeq}.")
+      }
+      t
+    }.groupBy(x => x).mapValues(_.size)
+      .filter(_._2 >= minCount)
+      .toArray
+      .sortBy(-_._2)
+      .map(_._1)
   }
 
   /**
-   * Generates conditional transactions.
-   * @param transaction a transaction
-   * @param itemToRank map from item to their rank
-   * @param partitioner partitioner used to distribute transactions
-   * @return a map of (target partition, conditional transaction)
-   */
+    * Generate frequent rule sets by building FP-Trees, the extraction is done on each partition.
+    * @param data transactions
+    * @param minCount minimum count for frequent itemsets
+    * @param freqItems frequent items
+    * @param partitioner partitioner used to distribute transactions
+    * @return an RDD of (frequent itemset, count)
+    */
+  private def genAssocRules[Item: ClassTag](
+                                             data: Iterable[(Array[Item], Item)],
+                                             minCount: Long,
+                                             freqItems: Array[Item],
+                                             partitioner: Partitioner,
+                                             classCount: scala.collection.immutable.Map[Item, Int],
+                                             inputCount: Int): Iterable[Rule[Item]] = {
+    val itemToRank = freqItems.zipWithIndex.toMap
+    data.flatMap { transaction =>
+      genCondTransactions(transaction, itemToRank, partitioner)
+    }.aggregate(new FPTree[Int, Item](classCount))(
+      (tree, transaction) => tree.addAndCountClasses(transaction._2, 1L),
+      (tree1, tree2) => tree1.merge(tree2))
+      .extractAssocRules(minCount, 10, minConfidence, minChi2, inputCount)
+      .map { case (ranks, label, sup, conf, chi2) =>
+        new Rule[Item](ranks.map(i => freqItems(i)).toArray, label, sup, conf, chi2)
+      }.toIterable
+  }
+
+  /**
+    * Generates conditional transactions.
+    * @param transaction a transaction
+    * @param itemToRank map from item to their rank
+    * @param partitioner partitioner used to distribute transactions
+    * @return a map of (target partition, conditional transaction)
+    */
   private def genCondTransactions[Item: ClassTag](
-      transaction: Array[Item],
-      itemToRank: Map[Item, Int],
-      partitioner: Partitioner): mutable.Map[Int, Array[Int]] = {
-    val output = mutable.Map.empty[Int, Array[Int]]
+                                                   transaction: (Array[Item], Item),
+                                                   itemToRank: Map[Item, Int],
+                                                   partitioner: Partitioner): mutable.Map[Int, (Array[Int], Item)] = {
+    val output = mutable.Map.empty[Int, (Array[Int], Item)]
     // Filter the basket by frequent items pattern and sort their ranks.
-    val filtered = transaction.flatMap(itemToRank.get)
-    ju.Arrays.sort(filtered)
-    val n = filtered.length
+    val filtered = (transaction._1.flatMap(itemToRank.get), transaction._2)
+    ju.Arrays.sort(filtered._1)
+    val n = filtered._1.length
     var i = n - 1
     while (i >= 0) {
-      val item = filtered(i)
+      val item = filtered._1(i)
       val part = partitioner.getPartition(item)
       if (!output.contains(part)) { //todo: eliminate partitions
-        output(part) = filtered.slice(0, i + 1)
+        output(part) = (filtered._1.slice(0, i + 1), filtered._2)
       }
       i -= 1
     }
     output
   }
+
 }
 
 /**
- * :: Experimental ::
- */
+  * :: Experimental ::
+  */
 @Experimental
 object FPGrowth {
 
   /**
-   * Frequent itemset.
-   * @param items items in this itemset. Java users should call [[FreqItemset#javaItems]] instead.
-   * @param freq frequency
-   * @tparam Item item type
-   */
+    * Frequent itemset.
+    * @param items items in this itemset. Java users should call [[FreqItemset#javaItems]] instead.
+    * @param freq frequency
+    * @tparam Item item type
+    */
   class FreqItemset[Item](val items: Array[Item], val freq: Long) extends Serializable {
 
     /**
-     * Returns items in a Java List.
-     */
+      * Returns items in a Java List.
+      */
     def javaItems: java.util.List[Item] = {
       items.toList.asJava
     }
