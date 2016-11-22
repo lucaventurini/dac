@@ -28,6 +28,8 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{HashPartitioner, Logging, Partitioner, SparkException}
 
+import org.apache.spark.mllib.tree.impurity.Gini
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.reflect.ClassTag
@@ -64,11 +66,11 @@ class FPGrowthModel[Item: ClassTag](val freqItemsets: Iterable[FreqItemset[Item]
   */
 @Experimental
 class FPGrowth[Item] private (
-                               private var minSupport: Double,
-                               private var numPartitions: Int,
-                               //private var class2Index: scala.collection.immutable.Map[Item, Int],
-                               private var minConfidence: Double = 0.5,
-                               private var minChi2: Double = 3.841) extends Logging with Serializable {
+     private var minSupport: Double,
+     private var numPartitions: Int,
+     //private var class2Index: scala.collection.immutable.Map[Item, Int],
+     private var minConfidence: Double = 0.5,
+     private var minChi2: Double = 3.841) extends Logging with Serializable {
 
   /**
     * Constructs a default instance with default parameters {minSupport: `0.3`, numPartitions: same
@@ -115,7 +117,7 @@ class FPGrowth[Item] private (
     * @return an [[FPGrowthModel]]
     */
   def run[Item: ClassTag](data: Iterable[(Array[Item], Item)],
-                          classCount: scala.collection.immutable.Map[Item, Int]): Iterable[Rule[Item]] = {
+      classCount: scala.collection.immutable.Map[Item, Int]): Iterable[Rule[Item]] = {
     val count = data.size
     val minCount = math.ceil(minSupport * count).toLong
     val numParts = 1
@@ -141,9 +143,9 @@ class FPGrowth[Item] private (
     * @return array of frequent pattern ordered by their frequencies
     */
   private def genFreqItems[Item: ClassTag](
-                                            data: Iterable[(Array[Item], Item)],
-                                            minCount: Long,
-                                            partitioner: Partitioner): Array[Item] = {
+      data: Iterable[(Array[Item], Item)],
+      minCount: Long,
+      partitioner: Partitioner): Array[Item] = {
     data.map(_._1).flatMap { t =>
       val uniq = t.toSet
       if (t.size != uniq.size) {
@@ -164,9 +166,9 @@ class FPGrowth[Item] private (
     * @return array of frequent pattern ordered by their frequencies
     */
   private def genGainItems[Item: ClassTag](
-                                            data: Iterable[(Array[Item], Item)],
-                                            minCount: Long,
-                                            partitioner: Partitioner): Array[Item] = {
+      data: Iterable[(Array[Item], Item)],
+      minCount: Long,
+      partitioner: Partitioner): Array[Item] = {
     data.map(_._1).flatMap { t =>
       val uniq = t.toSet
       if (t.size != uniq.size) {
@@ -189,12 +191,12 @@ class FPGrowth[Item] private (
     * @return an RDD of (frequent itemset, count)
     */
   private def genAssocRules[Item: ClassTag](
-                                             data: Iterable[(Array[Item], Item)],
-                                             minCount: Long,
-                                             freqItems: Array[Item],
-                                             partitioner: Partitioner,
-                                             classCount: scala.collection.immutable.Map[Item, Int],
-                                             inputCount: Int): Iterable[Rule[Item]] = {
+     data: Iterable[(Array[Item], Item)],
+     minCount: Long,
+     freqItems: Array[Item],
+     partitioner: Partitioner,
+     classCount: scala.collection.immutable.Map[Item, Int],
+     inputCount: Int): Iterable[Rule[Item]] = {
     val itemToRank = freqItems.zipWithIndex.toMap
     data.flatMap { transaction =>
       genCondTransactions(transaction, itemToRank, partitioner)
@@ -215,9 +217,9 @@ class FPGrowth[Item] private (
     * @return a map of (target partition, conditional transaction)
     */
   private def genCondTransactions[Item: ClassTag](
-                                                   transaction: (Array[Item], Item),
-                                                   itemToRank: Map[Item, Int],
-                                                   partitioner: Partitioner): mutable.Map[Int, (Array[Int], Item)] = {
+     transaction: (Array[Item], Item),
+     itemToRank: Map[Item, Int],
+     partitioner: Partitioner): mutable.Map[Int, (Array[Int], Item)] = {
     val output = mutable.Map.empty[Int, (Array[Int], Item)]
     // Filter the basket by frequent items pattern and sort their ranks.
     val filtered = (transaction._1.flatMap(itemToRank.get), transaction._2)
