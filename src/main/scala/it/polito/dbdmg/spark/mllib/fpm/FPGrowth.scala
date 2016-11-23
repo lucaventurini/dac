@@ -168,16 +168,32 @@ class FPGrowth[Item] private (
   private def genGainItems[Item: ClassTag](
       data: Iterable[(Array[Item], Item)],
       minCount: Long,
-      partitioner: Partitioner): Array[Item] = {
-    data.map(_._1).flatMap { t =>
-      val uniq = t.toSet
-      if (t.size != uniq.size) {
-        throw new SparkException(s"Items in a transaction must be unique but got ${t.toSeq}.")
+      partitioner: Partitioner,
+      classCount: scala.collection.immutable.Map[Item, Int],
+      inputCount: Long): Array[Item] = {
+    val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
+    data.flatMap { case (items, label) =>
+      val uniq = items.toSet
+      if (items.size != uniq.size) {
+        throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
       }
-      t
+      items.map {
+        i => (i, label)
+      }
     }.groupBy(x => x).mapValues(_.size)
-      .filter(_._2 >= minCount)
-      .toArray
+      //.filter(_._2 >= minCount)
+      .groupBy(_._1._1).mapValues { x =>
+      val count = x.map(_._2).sum
+      val classesCount = x.map(_._1._2).groupBy(x => x).mapValues(_.size)
+      (count, classesCount)
+    }.map { case (i, (count, class2count)) =>
+      val omega = count.toDouble / inputCount
+      val giniSon = Gini.calculate(class2count
+        .map(_._2.toDouble)
+        .toArray, class2count.map(_._2)
+        .sum.toDouble)
+      (i, omega * (giniFather - giniSon))
+    }.toArray
       .sortBy(-_._2)
       .map(_._1)
   }
