@@ -1,14 +1,88 @@
+package it.polito.dbdmg.ml
+
+import it.polito.dbdmg.spark.mllib.fpm.{FPGrowth => FPGrowthLocal}
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
+
+import scala.util.Random
 
 /**
  * Created by luca on 24/02/15.
  */
 
-case class Rule(antecedent:Set[Long], consequent:Long, support:Double, confidence:Double, chi2:Double) {
+object Rule {
+  def orderingByConf[A <: Rule]: Ordering[A] =
+    Ordering.by(x => (x.confidence,x.support,x.antecedent.size,x.toString()))
+
+  implicit def orderingByConfDesc[A <: Rule]: Ordering[A] =
+    orderingByConf.reverse
+
+
+
+}
+
+case class Rule(antecedent:Array[Long], consequent:Long, support:Double, confidence:Double, chi2:Double) {
   override def toString() = {
     antecedent.mkString(" ") +f" -> $consequent ($support%.6f, $confidence%.6f, $chi2%.6f)"
   }
+
+  def appliesTo(x : Array[Long]) : Boolean = {
+    antecedent.forall(x.contains(_))
+  }
+
+  @deprecated def appliesTo(x : Set[Long]) : Boolean = {
+    antecedent.forall(x.contains(_))
+  }
+}
+
+class L3LocalModel(val rules:List[Rule], val rulesIIlevel:List[Rule], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable {
+
+  def predict(transaction:Set[Long]):Long = {
+    //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
+    predictOption(transaction).getOrElse(defaultClass)
+  }
+  def predictOption(transaction:Set[Long]):Option[Long] = {
+    rules.find(_.appliesTo(transaction)).map(_.consequent).
+      orElse(rulesIIlevel.find(_.appliesTo(transaction)).map(_.consequent))
+  }
+
+  def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
+    transactions.map(x => predict(x))
+  }
+
+  def dBCoverage(input: Iterable[Array[Long]], saveSpare: Boolean = true) : L3LocalModel = {
+    val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
+    val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
+    var db = input.toSeq
+    //db.cache()
+
+    for (r <- rules) {
+      val applicable = db.filter(x => r.appliesTo(x))
+      if (applicable.isEmpty) {
+        if (saveSpare)spareBuilder += r
+      }
+      else {
+        val correct = applicable.find {
+          x => val classLabel = x.find(_ < numClasses)
+            classLabel == Some(r.consequent)
+        }
+        if (correct.nonEmpty) {
+          db = db diff applicable
+
+          usedBuilder += r
+        }
+      }
+    }
+
+    new L3LocalModel(usedBuilder.result, spareBuilder.result, numClasses, defaultClass)
+
+  }
+
+  override def toString() = {
+    (rules ++ rulesIIlevel).map(_.toString).mkString("\n")
+  }
+
+
 }
 
 class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{ //todo: serialize with Kryo?
@@ -27,7 +101,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
 
   def predict(transaction:Set[Long]):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
-    rules.find(_.antecedent.subsetOf(transaction)).map(_.consequent).getOrElse(defaultClass)
+    rules.find(_.appliesTo(transaction)).map(_.consequent).getOrElse(defaultClass)
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
@@ -37,11 +111,11 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
   def dBCoverage(input: RDD[Array[Long]] = dataset) : L3Model = {
     val usedBuilder = List.newBuilder[Rule] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule] //spare rules : do not predict, but not harmful
-    var db = input.map(_.toSet).collect()
+    var db = input.collect()
     //db.cache()
 
     for (r <- rules) {
-      val applicable = db.filter(x => r.antecedent.subsetOf(x))
+      val applicable = db.filter(x => r.appliesTo(x))
       if (applicable.isEmpty) {
         spareBuilder += r
       }
@@ -68,15 +142,33 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule], val numClasses
 
 }
 
-class L3EnsembleModel(val models:Array[L3Model]) {
+class L3EnsembleModel(val models:Array[L3LocalModel]) extends java.io.Serializable {
+
+  // choose default class by majority
+  lazy val defaultClass : Long = models.map(_.defaultClass).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
 
   def predict(transaction:Set[Long]):Long = {
     /* use majority voting to select a prediction */
-    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
+    predictMajorityOption(transaction)
   }
 
   def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
     transactions.map(x => predict(x)) //todo: switch to models.map(_.predict(transactions)).majority_voting
+  }
+
+  def predictMajority(transaction:Set[Long]):Long = {
+    /* use majority voting to select a prediction */
+    models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
+  }
+
+  def predictMajorityOption(transaction:Set[Long]):Long = {
+    /* use majority voting to select a prediction */
+    val votes = models.map(_.predictOption(transaction)).filter(_.nonEmpty).groupBy{label => label }.mapValues(_.size)
+    if (votes.nonEmpty) votes.maxBy(_._2)._1.getOrElse(defaultClass) else defaultClass
+  }
+
+  def dbCoverage(dataset:Iterable[Array[Long]]) = {
+    new L3EnsembleModel(models.map(_.dBCoverage(dataset)))
   }
 
   override def toString() = {
@@ -85,19 +177,74 @@ class L3EnsembleModel(val models:Array[L3Model]) {
 
 }
 
-class L3Ensemble (val numClasses:Int, val numModels:Int = 100, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841){
+class L3Ensemble (val numClasses:Int,
+                  val numModels:Int = 100,
+                  val sampleSize:Double = 0.01,
+                  val minSupport:Double = 0.2,
+                  val minConfidence:Double = 0.5,
+                  val minChi2:Double = 3.841,
+                  val withReplacement:Boolean = true) extends java.io.Serializable{
 
   def train(input: RDD[Array[Long]]):L3EnsembleModel = {
+    // N.B: numPartitions = numModels
     val l3 = new L3(numClasses, minSupport, minConfidence, minChi2)
-    val models = Array.fill(numModels)(scala.util.Random.nextLong()).
-      map(input.sample(true, 0.01, _)). //todo: variable sample size
-      map(x => l3.train(x))
-    new L3EnsembleModel(models)
-
+    new L3EnsembleModel(
+      input.keyBy(_ => Random.nextInt()).
+        sample(withReplacement, numModels*sampleSize).//TODO: stratified sampling
+        repartition(numModels).
+        mapPartitions{ samples =>
+        val s = samples.toIterable.map(_._2) //todo: toArray ?
+        val model: L3LocalModel = l3.train(s).dBCoverage(s)
+        Iterator(model)
+      }.collect()
+    )
   }
+
+
 }
 
 class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841) extends java.io.Serializable{
+
+  def train(input: Iterable[Array[Long]]): L3LocalModel = {
+    val count = input.size
+
+    val fpg = new FPGrowthLocal()
+      .setMinSupport(minSupport)
+    val model = fpg.run(input)
+
+
+    //model.freqItemsets.map{case (items, sup) => (items.partition(_ < numClasses), sup)}
+
+    val antecedents = model.freqItemsets.map{
+      f => val x = f.items.partition(_ < numClasses);(x._2.toSet,(x._1, f.freq.toDouble/count))
+    }.toList
+    val supAnts = antecedents.filter(_._2._1.isEmpty).map{
+      case (x, (_, sup)) => (x, sup)
+    }.toMap
+
+    val supClasses = antecedents.filter(_._1.isEmpty).map{
+      case (_, (classLabels, sup)) => (classLabels(0), sup)
+    }.toMap
+
+
+
+
+
+    val rules = antecedents.filter(x =>x._2._1.nonEmpty && x._1.nonEmpty).map{
+      case (ant, (classLabels, sup)) => {
+        val supCons = supClasses(classLabels(0))
+        val supAnt = supAnts(ant)
+        val chi2 = count * {List(sup, supAnt - sup, supCons - sup, 1 - supAnt - supCons + sup) zip
+          List(supAnt * supCons, supAnt * (1 - supCons), (1 - supAnt) * supCons, (1 - supAnt) * (1 - supCons)) map
+          {case (observed, expected) => math.pow((observed - expected), 2) / expected} sum }
+        Rule(ant.toArray, classLabels(0), sup, sup/supAnt.toDouble, chi2) //todo: stop using sets
+      }
+    }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
+
+
+    new L3LocalModel(rules.sorted, List(), numClasses, supClasses.maxBy(_._2)._1)
+
+  }
 
   def train(input: RDD[Array[Long]]): L3Model = {
 
@@ -105,7 +252,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
 
     val fpg = new FPGrowth()
       .setMinSupport(minSupport)
-      //.setNumPartitions(10) //TODO
+      .setNumPartitions(4*2) //TODO
     val model = fpg.run(input)
 
 
@@ -114,6 +261,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
     val antecedents = model.freqItemsets.map{
       f => val x = f.items.partition(_ < numClasses);(x._2.toSet,(x._1, f.freq.toDouble/count))
     }
+    antecedents.cache()
     val supAnts = antecedents.filter(_._2._1.isEmpty).mapValues{
       case (_, sup) => sup
     }
@@ -132,7 +280,7 @@ class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Dou
         val chi2 = count * {List(sup, supAnt - sup, supCons - sup, 1 - supAnt - supCons + sup) zip
           List(supAnt * supCons, supAnt * (1 - supCons), (1 - supAnt) * supCons, (1 - supAnt) * (1 - supCons)) map
           {case (observed, expected) => math.pow((observed - expected), 2) / expected} sum }
-        Rule(ant, classLabels(0), sup, sup/supAnt.toDouble, chi2)
+        Rule(ant.toArray, classLabels(0), sup, sup/supAnt.toDouble, chi2) //todo: stop using sets
       }
     }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
 
