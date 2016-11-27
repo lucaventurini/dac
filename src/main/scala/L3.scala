@@ -1,7 +1,7 @@
 package it.polito.dbdmg.ml
 
 import it.polito.dbdmg.spark.mllib.fpm.{FPGrowth => FPGrowthLocal}
-import org.apache.spark.SparkContext
+import org.apache.spark.{SparkContext, SparkException}
 import org.apache.spark.mllib.fpm.FPGrowth
 import org.apache.spark.rdd.RDD
 
@@ -264,68 +264,58 @@ class L3Ensemble (val numClasses:Int,
                   val minSupport:Double = 0.2,
                   val minConfidence:Double = 0.5,
                   val minChi2:Double = 3.841,
+                  val strategy: String = "gain",
                   val withReplacement:Boolean = true) extends java.io.Serializable{
 
-  def train(input: RDD[Array[Long]]):L3EnsembleModel = {
+  def train(input: RDD[(Array[Long], Long)]):L3EnsembleModel = {
     // N.B: numPartitions = numModels
-    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2)
+    if (!(strategy.equals("gain") || strategy.equals("support")))
+      throw new SparkException(s"Strategy must be gain or support but got: $strategy.")
+    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2, strategy)
     new L3EnsembleModel(
       input.keyBy(_ => Random.nextInt()).
         sample(withReplacement, numModels*sampleSize).//TODO: stratified sampling
         repartition(numModels).
         mapPartitions{ samples =>
           val s = samples.toIterable.map(_._2) //todo: toArray ?
-        val ss = s.map {
-          x => val (p0, p1) = x.partition(_ < numClasses)
-            (p1, p0.head)
-        }
-          //val model: L3LocalModel = l3.train(s).dBCoverage(s)
-          val model: L3LocalModel = l3.train2(ss).dBCoverage2(ss)
+        val model: L3LocalModel = l3.train(s).dBCoverage2(s)
           Iterator(model)
         }.collect()
     )
   }
 
-  def train2(input: RDD[(Array[Long], Long)]):L3EnsembleModel = {
-    // N.B: numPartitions = numModels
-    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2)
-    new L3EnsembleModel(
-      input.keyBy(_ => Random.nextInt()).
-        sample(withReplacement, numModels*sampleSize).//TODO: stratified sampling
-        repartition(numModels).
-        mapPartitions{ samples =>
-          val s = samples.toIterable.map(_._2) //todo: toArray ?
-        val model: L3LocalModel = l3.train2(s).dBCoverage2(s)
-          Iterator(model)
-        }.collect()
-    )
+  def withInformationGain(): Boolean = {
+    if (strategy.equals("gain")) true else false
   }
 
 
 }
 
-class L3 (val numClasses:Int, val minSupport:Double = 0.2, val minConfidence:Double = 0.5, val minChi2:Double = 3.841) extends java.io.Serializable{
+class L3 (val numClasses:Int,
+          val minSupport:Double = 0.2,
+          val minConfidence:Double = 0.5,
+          val minChi2:Double = 3.841,
+          val strategy: String = "gain") extends java.io.Serializable{
 
-  def train2(input: Iterable[(Array[Long], Long)]): L3LocalModel = {
-
+  def train(input: Iterable[(Array[Long], Long)]): L3LocalModel = {
+    if (!(strategy.equals("gain") || strategy.equals("support")))
+      throw new SparkException(s"Strategy must be gain or support but got: $strategy.")
     val classCount = input.map(_._2).groupBy(x => x).mapValues(_.size)
     val defaultClass = classCount.maxBy(_._2)._1
     val fpg = new FPGrowthLocal[Long]()
       .setMinSupport(minSupport)
-      //.setClass2Index(class2Index)
+      .setStrategy(strategy)
       .setMinConfidence(minConfidence)
       .setMinChi2(minChi2)
 
     val rules = fpg.run(input, classCount)
 
-
     new L3LocalModel(rules.toList.sorted, List(), numClasses, defaultClass)
 
   }
 
-  def train[Item](input: RDD[Array[Item]], isClassLabel:(Item => Boolean)) {
-    //TODO: generalize to any type of item representation, given a function to distinguish a class label
-    //default: Item = Long, isClassLabel = (x => x < numClasses)
+  def withInformationGain(): Boolean = {
+    if (strategy.equals("gain")) true else false
   }
 
 }

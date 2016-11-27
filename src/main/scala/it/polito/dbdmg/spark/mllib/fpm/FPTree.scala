@@ -17,6 +17,8 @@
 
 package it.polito.dbdmg.spark.mllib.fpm
 
+import org.apache.spark.mllib.tree.impurity.Gini
+
 import scala.collection.mutable
 import scala.collection.mutable.ListBuffer
 import scala.reflect.ClassTag
@@ -170,6 +172,109 @@ private[fpm] class FPTree[T, ClassType](val classCount: scala.collection.immutab
         Iterator.empty
       }
     }
+  }
+
+  /** Extracts all patterns with valid suffix and minimum count and with a minimum information gain. */
+  def extractAssocRulesWInfoGain(
+                                  minCount: Long,
+                                  maxLength: Int,
+                                  minConfidence: Double = 0.5,
+                                  minChi2: Double = 3.841,
+                                  inputCount: Int,
+                                  minInfoGain: Double = 0.0,
+                                  validateSuffix: T => Boolean = _ => true): Iterator[(List[T], ClassType, Double, Double, Double)] = {
+    var it: Iterator[(List[T], ClassType, Double, Double, Double)] = Iterator.empty
+    root.children.foreach { case (item, node) =>
+      it = it ++ extract(item, node, minCount,
+        maxLength, minConfidence, minChi2,
+        inputCount, minInfoGain)
+    }
+    it
+  }
+
+  def extract(item: T,
+              node: Node[T],
+              minCount: Long,
+              maxLength: Int,
+              minConfidence: Double = 0.5,
+              minChi2: Double = 3.841,
+              inputCount: Int,
+              minInfoGain: Double = 0.0,
+              validateSuffix: T => Boolean = _ => true): Iterator[(List[T], ClassType, Double, Double, Double)] = {
+    var it: Iterator[(List[T], ClassType, Double, Double, Double)] = Iterator.empty
+    val parent = node.parent
+    val omega: Double = node.classesCount.sum.toDouble / parent.classesCount.sum
+    val giniFather = Gini.calculate(
+      parent.classesCount.map(_.toDouble).toArray,
+      parent.classesCount.sum.toDouble)
+    val giniSon = Gini.calculate(
+      node.classesCount.map(_.toDouble).toArray,
+      node.classesCount.sum.toDouble)
+    val ig: Double = omega * (giniFather - giniSon)
+
+    if (ig > minInfoGain && maxLength > 0 && validateSuffix(item)) {
+
+      if (giniSon == 0.0) {
+        //genera regola
+        it ++ generateRule(node, minCount, maxLength, minConfidence, minChi2, inputCount)
+      }
+      else {
+        node.children.foreach { case(cItem, cNode) =>
+          it = it ++ extract(cItem, cNode, minCount,
+            maxLength, minConfidence, minChi2,
+            inputCount, minInfoGain)
+        }
+
+        if (it.isEmpty) {
+          // genera regola (solo padre)
+          it ++ generateRule(node, minCount, maxLength, minConfidence, minChi2, inputCount)
+        } else {
+          //genera regola (con figli)
+          it.map { case (t, label, sup, conf, chi2) =>
+            ((item :: t, label, sup, conf, chi2))
+          }
+        }
+      }
+    }
+    else
+      Iterator.empty
+  }
+
+  def generateRule(node: Node[T],
+                   minCount: Long,
+                   maxLength: Int,
+                   minConfidence: Double = 0.5,
+                   minChi2: Double = 3.841,
+                   inputCount: Int):
+  Iterator[(List[T], ClassType, Double, Double, Double)] = {
+    val count = node.classesCount.max
+    val idx = node.classesCount.indexOf(count)
+    var it: Iterator[(List[T], ClassType, Double, Double, Double)] = Iterator.empty
+
+    if (count >= minCount) {
+      var tree: FPTree[T, ClassType] = project(node.item)
+      var curr = node.parent
+      while (!curr.isRoot) {
+        tree = tree.project(curr.item)
+        curr = curr.parent
+      }
+
+      val supClasses = tree.root.classesCount
+      val maxCount = supClasses.max
+      val supCons = classCount(idx2class(idx)).toDouble / inputCount
+      val sup = supClasses(idx).toDouble / inputCount
+      val supAnt = supClasses.sum.toDouble / inputCount
+      val conf = sup.toDouble / supAnt
+      val chi2 = inputCount * {
+        List(sup, supAnt - sup, supCons - sup, 1 - supAnt - supCons + sup) zip
+          List(supAnt * supCons, supAnt * (1 - supCons), (1 - supAnt) * supCons, (1 - supAnt) * (1 - supCons)) map
+          { case (observed: Double, expected: Double) => math.pow((observed - expected), 2) / expected } sum
+      }
+
+      if (conf >= minConfidence && (chi2 >= minChi2 || chi2.isNaN))
+        it = it ++ Iterator((node.item :: Nil, idx2class(idx), sup, conf, chi2))
+    }
+    it
   }
 
 }

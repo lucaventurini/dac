@@ -27,14 +27,13 @@ import org.apache.spark.mllib.fpm.FPGrowth.FreqItemset
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
 import org.apache.spark.{HashPartitioner, Logging, Partitioner, SparkException}
-
 import org.apache.spark.mllib.tree.impurity.Gini
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.reflect.ClassTag
-
 import it.polito.dbdmg.ml.Rule
+import org.apache.spark.mllib.regression.LabeledPoint
 
 
 /**
@@ -68,7 +67,7 @@ class FPGrowthModel[Item: ClassTag](val freqItemsets: Iterable[FreqItemset[Item]
 class FPGrowth[Item] private (
      private var minSupport: Double,
      private var numPartitions: Int,
-     //private var class2Index: scala.collection.immutable.Map[Item, Int],
+     private var strategy: String = "gain",
      private var minConfidence: Double = 0.5,
      private var minChi2: Double = 3.841) extends Logging with Serializable {
 
@@ -94,11 +93,6 @@ class FPGrowth[Item] private (
     this
   }
 
-  /*def setClass2Index(class2Index: scala.collection.immutable.Map[Item, Int]): this.type = {
-    this.class2Index = class2Index
-    this
-  }*/
-
   def setMinConfidence(minConfidence: Double): this.type = {
     this.minConfidence = minConfidence
     this
@@ -107,6 +101,15 @@ class FPGrowth[Item] private (
   def setMinChi2(minChi2: Double): this.type = {
     this.minChi2 = minChi2
     this
+  }
+
+  def setStrategy(strategy: String): this.type = {
+    this.strategy = strategy
+    this
+  }
+
+  def withInformationGain(): Boolean = {
+    if (strategy.equals("gain")) true else false
   }
 
 
@@ -122,18 +125,14 @@ class FPGrowth[Item] private (
     val minCount = math.ceil(minSupport * count).toLong
     val numParts = 1
     val partitioner = new HashPartitioner(numParts)
-    val freqItems = genFreqItems(data, minCount, partitioner)
-    //val freqItemsets = genFreqItemsets(data, minCount, freqItems, partitioner)
-    val rules = genAssocRules(data, minCount, freqItems, partitioner, classCount, count)
-    rules
+    if (withInformationGain()) {
+      val items = genGainItems(data, minCount, partitioner, classCount, count)
+      genAssocRulesWInfoGain(data, minCount, items, partitioner, classCount, count)
+    } else {
+      val freqItems = genFreqItems(data, minCount, partitioner)
+      genAssocRules(data, minCount, freqItems, partitioner, classCount, count)
+    }
   }
-
-
-  /*
-    def run[Item, Basket <: JavaIterable[Item]](data: JavaRDD[Basket]): it.polito.dbdmg.spark.mllib.fpm.FPGrowthModel[Item] = {
-      implicit val tag = fakeClassTag[Item]
-      run(data.rdd.map(_.asScala.toArray))
-    }*/
 
 
   /**
@@ -166,11 +165,11 @@ class FPGrowth[Item] private (
     * @return array of frequent pattern ordered by their frequencies
     */
   private def genGainItems[Item: ClassTag](
-      data: Iterable[(Array[Item], Item)],
-      minCount: Long,
-      partitioner: Partitioner,
-      classCount: scala.collection.immutable.Map[Item, Int],
-      inputCount: Long): Array[Item] = {
+                                            data: Iterable[(Array[Item], Item)],
+                                            minCount: Long,
+                                            partitioner: Partitioner,
+                                            classCount: scala.collection.immutable.Map[Item, Int],
+                                            inputCount: Long): Array[Item] = {
     val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
     data.flatMap { case (items, label) =>
       val uniq = items.toSet
@@ -184,7 +183,7 @@ class FPGrowth[Item] private (
       //.filter(_._2 >= minCount)
       .groupBy(_._1._1).mapValues { x =>
       val count = x.map(_._2).sum
-      val classesCount = x.map(_._1._2).groupBy(x => x).mapValues(_.size)
+      val classesCount = x.map(x => (x._1._2,x._2))
       (count, classesCount)
     }.map { case (i, (count, class2count)) =>
       val omega = count.toDouble / inputCount
@@ -207,12 +206,12 @@ class FPGrowth[Item] private (
     * @return an RDD of (frequent itemset, count)
     */
   private def genAssocRules[Item: ClassTag](
-     data: Iterable[(Array[Item], Item)],
-     minCount: Long,
-     freqItems: Array[Item],
-     partitioner: Partitioner,
-     classCount: scala.collection.immutable.Map[Item, Int],
-     inputCount: Int): Iterable[Rule[Item]] = {
+                                           data: Iterable[(Array[Item], Item)],
+                                           minCount: Long,
+                                           freqItems: Array[Item],
+                                           partitioner: Partitioner,
+                                           classCount: scala.collection.immutable.Map[Item, Int],
+                                           inputCount: Int): Iterable[Rule[Item]] = {
     val itemToRank = freqItems.zipWithIndex.toMap
     data.flatMap { transaction =>
       genCondTransactions(transaction, itemToRank, partitioner)
@@ -224,6 +223,35 @@ class FPGrowth[Item] private (
         new Rule[Item](ranks.map(i => freqItems(i)).toArray, label, sup, conf, chi2)
       }.toIterable
   }
+
+  /**
+    * Generate frequent rule sets by building FP-Trees, the extraction is done on each partition.
+    * @param data transactions
+    * @param minCount minimum count for frequent itemsets
+    * @param items frequent items
+    * @param partitioner partitioner used to distribute transactions
+    * @return an RDD of (frequent itemset, count)
+    */
+  private def genAssocRulesWInfoGain[Item: ClassTag](
+                                             data: Iterable[(Array[Item], Item)],
+                                             minCount: Long,
+                                             items: Array[Item],
+                                             partitioner: Partitioner,
+                                             classCount: scala.collection.immutable.Map[Item, Int],
+                                             inputCount: Int): Iterable[Rule[Item]] = {
+    val itemToRank = items.zipWithIndex.toMap
+    data.flatMap { transaction =>
+      genCondTransactions(transaction, itemToRank, partitioner)
+    }.aggregate(new FPTree[Int, Item](classCount))(
+      (tree, transaction) => tree.addAndCountClasses(transaction._2, 1L),
+      (tree1, tree2) => tree1.merge(tree2))
+      .extractAssocRulesWInfoGain(minCount, 10, minConfidence, minChi2, inputCount)
+      .map { case (ranks, label, sup, conf, chi2) =>
+        new Rule[Item](ranks.map(i => items(i)).toArray, label, sup, conf, chi2)
+      }.toIterable
+  }
+
+
 
   /**
     * Generates conditional transactions.
