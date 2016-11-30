@@ -47,7 +47,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
   }
   lazy val l3 = new L3(numClasses = 2, minChi2 = 0.0)
   lazy val model = l3.train(data)
-  lazy val modelCovered = model.dBCoverage2(data)
+  lazy val modelCovered = model.dBCoverage(data)
 
   if (l3.withInformationGain()) {
 
@@ -134,7 +134,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
 
   "The DB coverage phase" should "filter harmful rules" in {
     val l: List[(Array[Long], Long)] = List[(Array[Long], Long)]((Array(20L, 21L, 22L), 1L))
-    model.dBCoverage2(l).toString.split("\n") should
+    model.dBCoverage(l).toString.split("\n") should
       equal("""22 21 -> 1 (0.333333, 0.500000, 1.500000)
               |22 21 -> 0 (0.333333, 0.500000, 1.500000)
               |22 -> 1 (0.333333, 0.500000, 1.500000)
@@ -198,7 +198,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   )
   lazy val model:L3LocalModel = {new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(input)}
 
-  lazy val modelCovered = model.dBCoverage2(input)
+  lazy val modelCovered = model.dBCoverage(input)
 
   "The L3 Local rule extractor" should "extract rules" in {
     new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
@@ -279,7 +279,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   }
 
   "The DB coverage phase" should "filter harmful rules" in {
-    model.dBCoverage2(List((Array[Long](20, 21, 22),1L))).toString.split("\n") should
+    model.dBCoverage(List((Array[Long](20, 21, 22),1L))).toString.split("\n") should
       equal("""22 21 -> 1 (0.333333, 0.500000, 1.500000)
               |22 21 -> 0 (0.333333, 0.500000, 1.500000)
               |22 -> 1 (0.333333, 0.500000, 1.500000)
@@ -299,7 +299,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   }
 
   it should "not save spare rules if asked so" in {
-    model.dBCoverage2(List((Array[Long](20, 21, 22), 1L)), saveSpare = false).rulesIIlevel should have size 0
+    model.dBCoverage(List((Array[Long](20, 21, 22), 1L)), saveSpare = false).rulesIIlevel should have size 0
   }
 
 

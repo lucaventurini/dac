@@ -35,6 +35,8 @@ import scala.reflect.ClassTag
 import it.polito.dbdmg.ml.Rule
 import org.apache.spark.mllib.regression.LabeledPoint
 
+import scala.collection.mutable.ArrayBuffer
+
 
 /**
   * :: Experimental ::
@@ -68,6 +70,7 @@ class FPGrowth[Item] private (
      private var minSupport: Double,
      private var numPartitions: Int,
      private var strategy: String = "gain",
+     private var minInfoGain: Double = 0.0,
      private var minConfidence: Double = 0.5,
      private var minChi2: Double = 3.841) extends Logging with Serializable {
 
@@ -103,6 +106,11 @@ class FPGrowth[Item] private (
     this
   }
 
+  def setMinInfoGain(minInfoGain: Double): this.type = {
+    this.minInfoGain = minInfoGain
+    this
+  }
+
   def setStrategy(strategy: String): this.type = {
     this.strategy = strategy
     this
@@ -116,6 +124,7 @@ class FPGrowth[Item] private (
   /**
     * Computes an Associative Classifier that contains frequent itemsets with
     * a class label, based on FP-Growth
+    *
     * @param data input data set, each element contains a transaction
     * @return an [[FPGrowthModel]]
     */
@@ -126,7 +135,9 @@ class FPGrowth[Item] private (
     val numParts = 1
     val partitioner = new HashPartitioner(numParts)
     if (withInformationGain()) {
+      //val selected = featureSelect(data, classCount, count)
       val items = genGainItems(data, minCount, partitioner, classCount, count)
+      //val items = genFreqItems(data, minCount, partitioner)
       genAssocRulesWInfoGain(data, minCount, items, partitioner, classCount, count)
     } else {
       val freqItems = genFreqItems(data, minCount, partitioner)
@@ -134,6 +145,29 @@ class FPGrowth[Item] private (
     }
   }
 
+  def featureSelect[Item: ClassTag](data: Iterable[(Array[Item], Item)],
+                                    classCount: scala.collection.immutable.Map[Item, Int],
+                                    inputCount: Int): Iterable[(Array[Item], Item)] = {
+    val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
+    val fs = data.flatMap(x => x._1.zipWithIndex.map((_,x._2)))
+      .groupBy(x => x._1._2).mapValues {
+      x => x.groupBy(_._2).mapValues(_.size)
+    }.mapValues { x =>
+      val omega = x.map(_._2).sum.toDouble / inputCount
+      val giniSon = Gini.calculate(x
+        .map(_._2.toDouble)
+        .toArray,x.map(_._2)
+        .sum.toDouble)
+      (omega * (giniFather - giniSon))
+    }.toArray
+      .sortBy(-_._2)
+      .zipWithIndex//.filter(x => x._2 < 10)
+      .map(_._1._1)
+
+    data.map{ x =>
+      (x._1.zipWithIndex.filter(i => fs.contains(i._2)).map(_._1), x._2)
+    }
+  }
 
   /**
     * Generates frequent items by filtering the input data using minimal support level.
@@ -142,9 +176,9 @@ class FPGrowth[Item] private (
     * @return array of frequent pattern ordered by their frequencies
     */
   private def genFreqItems[Item: ClassTag](
-      data: Iterable[(Array[Item], Item)],
-      minCount: Long,
-      partitioner: Partitioner): Array[Item] = {
+                                            data: Iterable[(Array[Item], Item)],
+                                            minCount: Long,
+                                            partitioner: Partitioner): Array[Item] = {
     data.map(_._1).flatMap { t =>
       val uniq = t.toSet
       if (t.size != uniq.size) {
@@ -171,7 +205,7 @@ class FPGrowth[Item] private (
                                             classCount: scala.collection.immutable.Map[Item, Int],
                                             inputCount: Long): Array[Item] = {
     val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
-    data.flatMap { case (items, label) =>
+    val items = data.flatMap { case (items, label) =>
       val uniq = items.toSet
       if (items.size != uniq.size) {
         throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
@@ -179,22 +213,60 @@ class FPGrowth[Item] private (
       items.map {
         i => (i, label)
       }
-    }.groupBy(x => x).mapValues(_.size)
-      //.filter(_._2 >= minCount)
-      .groupBy(_._1._1).mapValues { x =>
-      val count = x.map(_._2).sum
-      val classesCount = x.map(x => (x._1._2,x._2))
-      (count, classesCount)
-    }.map { case (i, (count, class2count)) =>
-      val omega = count.toDouble / inputCount
-      val giniSon = Gini.calculate(class2count
-        .map(_._2.toDouble)
-        .toArray, class2count.map(_._2)
-        .sum.toDouble)
-      (i, omega * (giniFather - giniSon))
+    }
+    val item2count: mutable.Map[Item, ArrayBuffer[Int]] = scala.collection.mutable.Map.empty
+    val class2Idx: Map[Item, Int] = classCount.keys.zipWithIndex.toMap
+    for (item <- items) {
+      val cc = item2count.getOrElseUpdate(item._1,
+        mutable.ArrayBuffer.fill(classCount.keys.size)(0))
+      cc(class2Idx(item._2)) += 1
+    }
+    println(item2count.size)
+    item2count.filter(x => x._2.sum >= minCount)
+      .map { x =>
+        val omega = x._2.map(_.toDouble).sum / inputCount.toDouble
+      val giniSon = Gini.calculate(x._2
+        .map(_.toDouble)
+        .toArray, x._2
+        .map(_.toDouble).sum)
+      (x._1, omega * (giniFather - giniSon))
     }.toArray
       .sortBy(-_._2)
+      //.take(10000)
       .map(_._1)
+
+
+    /*.groupBy(x => x._1)
+      .filter(_._2.size >= minCount)
+      .mapValues {
+        x => x.groupBy(_._2).mapValues(_.size).map(_._2)
+      }.map { case (item, count) =>
+      val omega = count.sum.toDouble / inputCount
+      val giniSon = Gini.calculate(count
+        .map(_.toDouble)
+        .toArray,count
+        .sum.toDouble)
+      (item, omega * (giniFather - giniSon))
+    }//.filter(_._2 >= minInfoGain)
+      .toArray
+      .sortBy(-_._2)
+      .map(_._1)*/
+
+      /*.groupBy(x => x._1).mapValues { items =>
+      classCount.keys.map { label =>
+        items.filter(_._2 == label).size
+      }
+    }.filter(x => x._2.sum.toLong >= minCount)
+      .map { case (item, count) =>
+        val omega = count.sum.toDouble / inputCount
+        val giniSon = Gini.calculate(count
+          .map(_.toDouble)
+          .toArray, count.sum.toDouble)
+        (item, omega * (giniFather - giniSon))
+      }.filter(_._2 > minInfoGain)
+      .toArray
+      .sortBy(-_._2)
+      .map(_._1)*/
   }
 
   /**
@@ -238,17 +310,28 @@ class FPGrowth[Item] private (
                                              items: Array[Item],
                                              partitioner: Partitioner,
                                              classCount: scala.collection.immutable.Map[Item, Int],
-                                             inputCount: Int): Iterable[Rule[Item]] = {
-    val itemToRank = items.zipWithIndex.toMap
-    data.flatMap { transaction =>
-      genCondTransactions(transaction, itemToRank, partitioner)
-    }.aggregate(new FPTree[Int, Item](classCount))(
-      (tree, transaction) => tree.addAndCountClasses(transaction._2, 1L),
-      (tree1, tree2) => tree1.merge(tree2))
-      .extractAssocRulesWInfoGain(minCount, 10, minConfidence, minChi2, inputCount)
-      .map { case (ranks, label, sup, conf, chi2) =>
-        new Rule[Item](ranks.map(i => items(i)).toArray, label, sup, conf, chi2)
-      }.toIterable
+                                             inputCount: Int,
+                                             sorted: Boolean = false): Iterable[Rule[Item]] = {
+    if (sorted) {
+      data.aggregate(new FPTree[Item, Item](classCount))(
+        (tree, transaction) => tree.addAndCountClasses(transaction, 1L),
+        (tree1, tree2) => tree1.merge(tree2))
+        .extractAssocRulesWInfoGain(minCount, 10, minConfidence, minChi2, inputCount)
+        .map { case (ant, label, sup, conf, chi2) =>
+          new Rule[Item](ant.toArray, label, sup, conf, chi2)
+        }.toIterable
+    } else {
+      val itemToRank = items.zipWithIndex.toMap
+      data.flatMap { transaction =>
+        genCondTransactions(transaction, itemToRank, partitioner)
+      }.aggregate(new FPTree[Int, Item](classCount))(
+        (tree, transaction) => tree.addAndCountClasses(transaction._2, 1L),
+        (tree1, tree2) => tree1.merge(tree2))
+        .extractAssocRulesWInfoGain(minCount, 10, minConfidence, minChi2, inputCount)
+        .map { case (ranks, label, sup, conf, chi2) =>
+          new Rule[Item](ranks.map(i => items(i)).toArray, label, sup, conf, chi2)
+        }.toIterable
+    }
   }
 
 

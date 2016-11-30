@@ -5,10 +5,6 @@ import it.polito.dbdmg.ml.L3Ensemble
 import org.apache.spark.{SparkConf, SparkContext, SparkException}
 import org.github.jamm.MemoryMeter
 import org.apache.hadoop.fs.{Path, FileSystem => HDFS}
-import org.apache.hadoop.conf._
-
-import scala.collection.mutable
-import scala.collection.mutable.ArrayBuffer
 
 /**
   * Created by ernesto on 26/05/16.
@@ -24,7 +20,7 @@ object Bac2Exp {
     val sampleSize = args(3).toDouble
     val numBins = args(4).toInt
     //val inputFile = args(5)
-    val inputFile = "DISC_B0_T500000_A9_F0.5.csv"
+    val inputFile = "DISC_B0_T1000000_A9_F0.5.csv"
     var tuples = 0L
     var numAtt = 0
     var numClasses = 0L
@@ -60,7 +56,8 @@ object Bac2Exp {
       val l3 = new L3Ensemble(numModels = numModels,
         numClasses = numClasses.toInt,
         minSupport = minSupp,
-        sampleSize = sampleSize)
+        sampleSize = sampleSize,
+        strategy = "gain")
       val t0 = System.nanoTime()
       val model = l3.train(transactions)
       val t1 = System.nanoTime()

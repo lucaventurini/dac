@@ -212,6 +212,7 @@ private[fpm] class FPTree[T, ClassType](val classCount: scala.collection.immutab
       node.classesCount.sum.toDouble)
     val ig: Double = omega * (giniFather - giniSon)
 
+
     if (ig > minInfoGain && maxLength > 0 && validateSuffix(item)) {
 
       if (giniSon == 0.0) {

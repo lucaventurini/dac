@@ -69,35 +69,7 @@ class L3LocalModel(val rules:List[Rule[Long]], val rulesIIlevel:List[Rule[Long]]
     transactions.map(x => predict(x))
   }
 
-  def dBCoverage(input: Iterable[Array[Long]], saveSpare: Boolean = true) : L3LocalModel = {
-    val usedBuilder = List.newBuilder[Rule[Long]] //used rules : correctly predict at least one rule
-    val spareBuilder = List.newBuilder[Rule[Long]] //spare rules : do not predict, but not harmful
-    var db = input.toSeq
-    //db.cache()
-
-    for (r <- rules) {
-      val applicable = db.filter(x => r.appliesTo(x))
-      if (applicable.isEmpty) {
-        if (saveSpare)spareBuilder += r
-      }
-      else {
-        val correct = applicable.find {
-          x => val classLabel = x.find(_ < numClasses)
-            classLabel == Some(r.consequent)
-        }
-        if (correct.nonEmpty) {
-          db = db diff applicable
-
-          usedBuilder += r
-        }
-      }
-    }
-
-    new L3LocalModel(usedBuilder.result, spareBuilder.result, numClasses, defaultClass)
-
-  }
-
-  def dBCoverage2(input: Iterable[(Array[Long], Long)], saveSpare: Boolean = true) : L3LocalModel = {
+  def dBCoverage(input: Iterable[(Array[Long], Long)], saveSpare: Boolean = true) : L3LocalModel = {
     val usedBuilder = List.newBuilder[Rule[Long]] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule[Long]] //spare rules : do not predict, but not harmful
     var db = input.toSeq
@@ -228,7 +200,7 @@ class L3EnsembleModel(val models:Array[L3LocalModel]) extends java.io.Serializab
     if (votes.nonEmpty) votes.maxBy(_._2)._1.getOrElse(defaultClass) else defaultClass
   }
 
-  def dbCoverage(dataset:Iterable[Array[Long]]) = {
+  def dbCoverage(dataset:Iterable[(Array[Long], Long)]) = {
     new L3EnsembleModel(models.map(_.dBCoverage(dataset)))
   }
 
@@ -278,7 +250,7 @@ class L3Ensemble (val numClasses:Int,
         repartition(numModels).
         mapPartitions{ samples =>
           val s = samples.toIterable.map(_._2) //todo: toArray ?
-        val model: L3LocalModel = l3.train(s).dBCoverage2(s)
+        val model: L3LocalModel = l3.train(s).dBCoverage(s)
           Iterator(model)
         }.collect()
     )

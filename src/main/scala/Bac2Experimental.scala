@@ -57,7 +57,8 @@ object Bac2Experimental {
       val l3 = new L3Ensemble(numModels = numModels,
         numClasses = numClasses.toInt,
         minSupport = minSupp,
-        sampleSize = sampleSize)
+        sampleSize = sampleSize,
+        strategy = "gain")
       val t0 = System.nanoTime()
       val model = l3.train(transactions)
       val t1 = System.nanoTime()
