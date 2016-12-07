@@ -13,6 +13,8 @@ object Bac2Exp {
 
   def main(args: Array[String]): Unit = {
 
+
+/*
     if (args.size < 6) return
     val id = args(0).toInt
     val numModels = args(1).toInt
@@ -122,7 +124,7 @@ object Bac2Exp {
         System.exit(1)
 
       }
-    }
+    }*/
   }
 
 }

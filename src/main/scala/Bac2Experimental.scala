@@ -97,7 +97,7 @@ object Bac2Experimental {
       hdfsConf.set("fs.hdfs.impl", classOf[org.apache.hadoop.hdfs.DistributedFileSystem].getName)
       hdfsConf.set("fs.file.impl", classOf[org.apache.hadoop.fs.LocalFileSystem].getName)
       val hdfs = HDFS.newInstance(hdfsConf)
-      val path = new Path(f"/user/valentino/tmp_${id}%04d")
+      val path = new Path(f"/user/valentino/tmp_${id}%06d")
       if (hdfs.exists(path))
         hdfs.delete(path, true)
       val os = hdfs.create(path)
@@ -121,7 +121,7 @@ object Bac2Experimental {
         hdfsConf.set("fs.hdfs.impl", classOf[org.apache.hadoop.hdfs.DistributedFileSystem].getName)
         hdfsConf.set("fs.file.impl", classOf[org.apache.hadoop.fs.LocalFileSystem].getName)
         val hdfs = HDFS.newInstance(hdfsConf)
-        val path = new Path(f"/user/valentino/tmp_${id}%04d")
+        val path = new Path(f"/user/valentino/tmp_${id}%06d")
         if (hdfs.exists(path))
           hdfs.delete(path, true)
 
@@ -153,7 +153,7 @@ object Bac2Experimental {
         hdfsConf.set("fs.hdfs.impl", classOf[org.apache.hadoop.hdfs.DistributedFileSystem].getName)
         hdfsConf.set("fs.file.impl", classOf[org.apache.hadoop.fs.LocalFileSystem].getName)
         val hdfs = HDFS.newInstance(hdfsConf)
-        val path = new Path(f"/user/valentino/tmp_${id}%04d")
+        val path = new Path(f"/user/valentino/tmp_${id}%06d")
         if (hdfs.exists(path))
           hdfs.delete(path, true)
 

@@ -273,7 +273,7 @@ object BacNetCv {
         val out = (f"${id}%4d;${numModels.toInt}%15d;${sampleSize}%20.6f;${minSupp}%20.6f;${numClasses}%15d;" +
           f"${numRules}%10.6f;${numRulesII}%10.6f;${accuracy}%10.8f;${variance}%20.9f;${trainTime}%10.6f;" +
           f"${predTime}%10.8f;${pred1}%10.10f\n")
-        val path3 = new Path(f"/user/valentino/tmp_${id}%03d")
+        val path3 = new Path(f"/user/valentino/tmp2_${id}")
         if (hdfs.exists(path3))
           hdfs.delete(path3, true)
 

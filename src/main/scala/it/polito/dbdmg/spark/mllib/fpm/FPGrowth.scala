@@ -213,15 +213,29 @@ class FPGrowth[Item] private (
       items.map {
         i => (i, label)
       }
-    }
-    val item2count: mutable.Map[Item, ArrayBuffer[Int]] = scala.collection.mutable.Map.empty
+    }.groupBy(x => x._1)
+      .filter(_._2.size >= minCount)
+      .mapValues {
+        x => x.groupBy(_._2).mapValues(_.size).map(_._2)
+      }.map { case (item, count) =>
+      val omega = count.sum.toDouble / inputCount
+      val giniSon = Gini.calculate(count
+        .map(_.toDouble)
+        .toArray,count
+        .sum.toDouble)
+      (item, omega * (giniFather - giniSon))
+    }//.filter(_._2 >= minInfoGain)
+      .toArray
+      .sortBy(-_._2)
+      .map(_._1)
+    items
+    /*val item2count: mutable.Map[Item, ArrayBuffer[Int]] = scala.collection.mutable.Map.empty
     val class2Idx: Map[Item, Int] = classCount.keys.zipWithIndex.toMap
     for (item <- items) {
       val cc = item2count.getOrElseUpdate(item._1,
         mutable.ArrayBuffer.fill(classCount.keys.size)(0))
       cc(class2Idx(item._2)) += 1
     }
-    println(item2count.size)
     item2count.filter(x => x._2.sum >= minCount)
       .map { x =>
         val omega = x._2.map(_.toDouble).sum / inputCount.toDouble
@@ -234,7 +248,7 @@ class FPGrowth[Item] private (
       .sortBy(-_._2)
       //.take(10000)
       .map(_._1)
-
+*/
 
     /*.groupBy(x => x._1)
       .filter(_._2.size >= minCount)

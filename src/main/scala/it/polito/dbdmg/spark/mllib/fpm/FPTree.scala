@@ -213,7 +213,7 @@ private[fpm] class FPTree[T, ClassType](val classCount: scala.collection.immutab
     val ig: Double = omega * (giniFather - giniSon)
 
 
-    if (ig > minInfoGain && maxLength > 0 && validateSuffix(item)) {
+    if (ig > minInfoGain && maxLength > 0 && validateSuffix(item) && node.classesCount.max >= minCount) {
 
       if (giniSon == 0.0) {
         //genera regola
