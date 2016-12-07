@@ -337,7 +337,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     model.rules should have size 137
   }
 
-  "The L3 version 2 rules extractor" should "extract rules" in {
+  "The L3 version 2 (with information gain) rules extractor" should "extract rules" in {
     new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1).train(List[(Array[Long], Long)](
       (Array(14, 13, 11, 10), 0),
       (Array(13, 12, 10), 1),
@@ -369,6 +369,20 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
 
   it should "filter rules" in {
     new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.2, minConfidence = 0.6).train(ex2).toString().split("\n") should equal(
+      """24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
+  }
+  it should "filter rules by support" in {
+    /*N.B.: rule 22 20 -> 1 becomes 22 -> with the higher minSupport*/
+    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.2, minConfidence = 0.3).train(ex2).toString().split("\n") should equal(
+      """22 -> 1 (0.428571, 0.750000, 1.215278)
+        |24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
+  }
+  it should "filter rules by confidence" in {
+    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.7).train(ex2).toString().split("\n") should equal(
+      """22 20 -> 1 (0.428571, 0.750000, 1.215278)""".stripMargin.split("\n"))
+  }
+  it should "filter rules by chi2" in {
+    new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.1, minConfidence = 0.3).train(ex2).toString().split("\n") should equal(
       """24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
   }
 
