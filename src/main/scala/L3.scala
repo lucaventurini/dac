@@ -15,8 +15,14 @@ object Rule {
   def orderingByConf[A <: Rule[Long]]: Ordering[A] =
     Ordering.by(x => (x.confidence,x.support,x.antecedent.size,x.toString()))
 
+  def orderingByConfString[A <: Rule[String]]: Ordering[A] =
+    Ordering.by(x => (x.confidence,x.support,x.antecedent.size,x.toString()))
+
   implicit def orderingByConfDesc[A <: Rule[Long]]: Ordering[A] =
-    orderingByConf.reverse
+    orderingByConf[A].reverse
+
+  implicit def orderingByConfDescString[A <: Rule[String]]: Ordering[A] =
+    orderingByConfString[A].reverse
 
 }
 

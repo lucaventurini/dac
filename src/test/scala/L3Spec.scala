@@ -360,6 +360,17 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     (Array(24, 21, 23), 1)
   )
 
+  private val ex3: List[(Array[String], Long)] = List[(Array[String], Long)](
+    (Array("A", "B", "C", "D"), 0),
+    (Array("A", "B", "D"), 1)
+  )
+
+//  ignore should "work with string items" in {
+//    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3).train(ex3).toString().split("\n") should equal(
+//      """boh"""
+//    )
+//  }
+
   it should "extract rules (2)" in {
     new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3).train(ex2).toString().split("\n") should equal(
       """22 20 -> 1 (0.428571, 0.750000, 1.215278)
