@@ -43,20 +43,19 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
   )
   val data = input.map {
     x => val (p0, p1) = x.partition(_ < 2)
-      (p0, p1.head)
+      (p1 ,p0.head)
   }
-  lazy val l3 = new L3(numClasses = 2, minChi2 = 0.0)
+  lazy val l3 = new L3(numClasses = 2, minChi2 = 0.0, strategy = "support")
   lazy val model = l3.train(data)
   lazy val modelCovered = model.dBCoverage(data)
 
-  if (l3.withInformationGain()) {
 
     // Version 1
 
     "The L3 rule extractor" should "extract rules" in {
-      new L3(numClasses = 2, minChi2 = 0.0).train(List[(Array[Long], Long)](
+      new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
         (Array(10, 11, 12), 0),
-        (Array(0, 11, 12), 0),
+        (Array(11, 12), 0),
         (Array(12), 1)
       )).toString().split("\n") should equal(
         """11 12 -> 0 (0.666667, 1.000000, 3.000000)
@@ -106,7 +105,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
         */
     }
 
-  }
+
 
 
   /*ignore should "filter chi2" in {
@@ -351,31 +350,25 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
         |12 -> 1 (0.500000, 0.750000, 3.000000)""".stripMargin.split("\n"))
   }
 
-  "The L3 version 2 rules extractor also " should "extract rules" in {
-    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3).train(List[(Array[Long], Long)](
-      (Array(24, 20, 21, 23), 0),
-      (Array(20, 22, 23), 1),
-      (Array(24, 20, 21, 23), 0),
-      (Array(24, 20, 22, 23), 1),
-      (Array(24, 20, 22, 21, 23), 0),
-      (Array(20, 22, 21), 1),
-      (Array(24, 21, 23), 1)
-    )).toString().split("\n") should equal(
+  private val ex2: List[(Array[Long], Long)] = List[(Array[Long], Long)](
+    (Array(24, 20, 21, 23), 0),
+    (Array(20, 22, 23), 1),
+    (Array(24, 20, 21, 23), 0),
+    (Array(24, 20, 22, 23), 1),
+    (Array(24, 20, 22, 21, 23), 0),
+    (Array(20, 22, 21), 1),
+    (Array(24, 21, 23), 1)
+  )
+
+  it should "extract rules (2)" in {
+    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3).train(ex2).toString().split("\n") should equal(
       """22 20 -> 1 (0.428571, 0.750000, 1.215278)
         |24 -> 0 (0.428571, 0.600000, 2.100000)
         |22 21 -> 1 (0.142857, 0.500000, 0.058333)""".stripMargin.split("\n"))
   }
 
-  "The L3 version 2 rules extractor" should "filter rules" in {
-    new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.2, minConfidence = 0.6).train(List[(Array[Long], Long)](
-      (Array(24, 20, 21, 23), 0),
-      (Array(20, 22, 23), 1),
-      (Array(24, 20, 21, 23), 0),
-      (Array(24, 20, 22, 23), 1),
-      (Array(24, 20, 22, 21, 23), 0),
-      (Array(20, 22, 21), 1),
-      (Array(24, 21, 23), 1)
-    )).toString().split("\n") should equal(
+  it should "filter rules" in {
+    new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.2, minConfidence = 0.6).train(ex2).toString().split("\n") should equal(
       """24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
   }
 
