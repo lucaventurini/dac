@@ -2,7 +2,7 @@ package it.polito.dbdmg.ml
 
 import it.polito.dbdmg.spark.mllib.fpm.{FPGrowth => FPGrowthLocal}
 import org.apache.spark.{SparkContext, SparkException}
-import org.apache.spark.mllib.fpm.FPGrowth
+import org.apache.spark.mllib.fpm.{FPGrowth => PFP}
 import org.apache.spark.rdd.RDD
 
 import scala.util.Random
@@ -242,7 +242,9 @@ class L3Ensemble (val numClasses:Int,
                   val minSupport:Double = 0.2,
                   val minConfidence:Double = 0.5,
                   val minChi2:Double = 3.841,
-                  val strategy: String = "gain",
+                  val strategy: String = "support",
+                  val minInfoGain: Double = 0.0,
+                  val rulesMaxLen: Int = 10,
                   val withReplacement:Boolean = true) extends java.io.Serializable{
 
   def train(input: RDD[(Array[Long], Long)]):L3EnsembleModel = {
@@ -273,7 +275,9 @@ class L3 (val numClasses:Int,
           val minSupport:Double = 0.2,
           val minConfidence:Double = 0.5,
           val minChi2:Double = 3.841,
-          val strategy: String = "gain") extends java.io.Serializable{
+          val strategy: String = "support",
+          val minInfoGain: Double = 0.0,
+          val rulesMaxLen: Int = 10) extends java.io.Serializable{
 
   def train(input: Iterable[(Array[Long], Long)]): L3LocalModel = {
     if (!(strategy.equals("gain") || strategy.equals("support")))
@@ -285,11 +289,59 @@ class L3 (val numClasses:Int,
       .setStrategy(strategy)
       .setMinConfidence(minConfidence)
       .setMinChi2(minChi2)
+      .setMinInfoGain(minInfoGain)
+      .setRulesMaxLength(rulesMaxLen)
 
     val rules = fpg.run(input, classCount)
 
     new L3LocalModel(rules.toList.sorted, List(), numClasses, defaultClass)
 
+  }
+
+
+
+  /*
+   * This version uses PFP (Parallel FP-Growth) and doesn't have the class
+   * information in building FP-Tree so cannot extract rules directly.
+   * Obsolete
+   */
+  @deprecated def train(input: RDD[Array[Long]]): L3Model = {
+
+    val count = input.count()
+
+    val fpg = new PFP()
+      .setMinSupport(minSupport)
+      .setNumPartitions(4*2) //TODO
+    val model = fpg.run(input)
+
+
+    //model.freqItemsets.map{case (items, sup) => (items.partition(_ < numClasses), sup)}
+
+    val antecedents = model.freqItemsets.map{
+      f => val x = f.items.partition(_ < numClasses);(x._2.toSet,(x._1, f.freq.toDouble/count))
+    }
+    antecedents.cache()
+    val supAnts = antecedents.filter(_._2._1.isEmpty).mapValues{
+      case (_, sup) => sup
+    }
+
+    val supClasses = antecedents.lookup(Set()).map{
+      case (classLabels, sup) => (classLabels(0), sup)
+    }.toMap //todo:bottleneck
+    //1st: use broadcast instead of a local map (sends the map only once)
+
+
+    val rules = antecedents.filter(_._2._1.nonEmpty).join(supAnts).map{
+      case (ant, ((classLabels, sup), supAnt)) => {
+        val supCons = supClasses(classLabels(0))
+        val chi2 = count * {List(sup, supAnt - sup, supCons - sup, 1 - supAnt - supCons + sup) zip
+          List(supAnt * supCons, supAnt * (1 - supCons), (1 - supAnt) * supCons, (1 - supAnt) * (1 - supCons)) map
+          {case (observed, expected) => math.pow((observed - expected), 2) / expected} sum }
+        Rule(ant.toArray, classLabels(0), sup, sup/supAnt.toDouble, chi2) //todo: stop using sets
+      }
+    }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
+
+    new L3Model(input, rules, numClasses, supClasses.maxBy(_._2)._1)
   }
 
   def withInformationGain(): Boolean = {

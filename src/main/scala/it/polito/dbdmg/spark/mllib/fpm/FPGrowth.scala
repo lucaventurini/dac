@@ -72,7 +72,8 @@ class FPGrowth[Item] private (
      private var strategy: String = "gain",
      private var minInfoGain: Double = 0.0,
      private var minConfidence: Double = 0.5,
-     private var minChi2: Double = 3.841) extends Logging with Serializable {
+     private var minChi2: Double = 3.841,
+     private var rulesMaxLen: Int = 10) extends Logging with Serializable {
 
   /**
     * Constructs a default instance with default parameters {minSupport: `0.3`, numPartitions: same
@@ -116,17 +117,23 @@ class FPGrowth[Item] private (
     this
   }
 
+  def setRulesMaxLength(rulesMaxLen: Int): this.type = {
+    this.rulesMaxLen = rulesMaxLen
+    this
+  }
+
   def withInformationGain(): Boolean = {
     if (strategy.equals("gain")) true else false
   }
 
-
   /**
     * Computes an Associative Classifier that contains frequent itemsets with
     * a class label, based on FP-Growth
-    *
-    * @param data input data set, each element contains a transaction
-    * @return an [[FPGrowthModel]]
+    * @param data input data set, each element contains a transaction with its class label
+    * @param classCount class count if the entire dataset, each element has a key that is a class label
+    *                   and a value that is the count of such class label in the entire data set
+    * @tparam Item class type if the transaction and the class label
+    * @return an Iterable of rules
     */
   def run[Item: ClassTag](data: Iterable[(Array[Item], Item)],
       classCount: scala.collection.immutable.Map[Item, Int]): Iterable[Rule[Item]] = {
@@ -145,6 +152,15 @@ class FPGrowth[Item] private (
     }
   }
 
+  /**
+    * Computes a feature selection on input data set
+    * @param data input data set, each element contains a transaction with its class label
+    * @param classCount class count if the entire dataset, each element has a key that is a class label
+    *                   and a value that is the count of such class label in the entire data set
+    * @param inputCount the total count of the input data set
+    * @tparam Item class type if the transaction and the class label
+    * @return the transactions modified in order to contain only the fatures selected
+    */
   def featureSelect[Item: ClassTag](data: Iterable[(Array[Item], Item)],
                                     classCount: scala.collection.immutable.Map[Item, Int],
                                     inputCount: Int): Iterable[(Array[Item], Item)] = {
@@ -161,7 +177,8 @@ class FPGrowth[Item] private (
       (omega * (giniFather - giniSon))
     }.toArray
       .sortBy(-_._2)
-      .zipWithIndex//.filter(x => x._2 < 10)
+      .zipWithIndex
+      .filter(x => x._2 < 10)  // here you can select only the number of features to select
       .map(_._1._1)
 
     data.map{ x =>
@@ -193,10 +210,11 @@ class FPGrowth[Item] private (
   }
 
   /**
-    * Generates frequent items by filtering the input data using minimal support level.
+    * Generates most significant items by filtering the input data using minimal support level, ordering
+    * them using the Information Gain value associated to each item.
     * @param minCount minimum count for frequent itemsets
     * @param partitioner partitioner used to distribute items
-    * @return array of frequent pattern ordered by their frequencies
+    * @return array of frequent pattern ordered by their information gain
     */
   private def genGainItems[Item: ClassTag](
                                             data: Iterable[(Array[Item], Item)],
@@ -205,7 +223,7 @@ class FPGrowth[Item] private (
                                             classCount: scala.collection.immutable.Map[Item, Int],
                                             inputCount: Long): Array[Item] = {
     val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
-    val items = data.flatMap { case (items, label) =>
+    data.flatMap { case (items, label) =>
       val uniq = items.toSet
       if (items.size != uniq.size) {
         throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
@@ -228,56 +246,29 @@ class FPGrowth[Item] private (
       .toArray
       .sortBy(-_._2)
       .map(_._1)
-    items
-    /*val item2count: mutable.Map[Item, ArrayBuffer[Int]] = scala.collection.mutable.Map.empty
-    val class2Idx: Map[Item, Int] = classCount.keys.zipWithIndex.toMap
-    for (item <- items) {
-      val cc = item2count.getOrElseUpdate(item._1,
-        mutable.ArrayBuffer.fill(classCount.keys.size)(0))
-      cc(class2Idx(item._2)) += 1
-    }
-    item2count.filter(x => x._2.sum >= minCount)
-      .map { x =>
-        val omega = x._2.map(_.toDouble).sum / inputCount.toDouble
-      val giniSon = Gini.calculate(x._2
-        .map(_.toDouble)
-        .toArray, x._2
-        .map(_.toDouble).sum)
-      (x._1, omega * (giniFather - giniSon))
-    }.toArray
-      .sortBy(-_._2)
-      //.take(10000)
-      .map(_._1)
-*/
 
-    /*.groupBy(x => x._1)
+      /*
+         alternative version: you can evaluate which one is better
+         this version group by the same items, then filters out the items without the
+         minimum support threshold, then for each item create the count of the classes starting
+         form the labels contained in classCount map, which contains all the labels
+         of the dataset with their complete count. Please note that values of the map
+         are not considered here, only the keys (e.g. the labels) are taken from the map.
+         This one has one group by operation less, probably this version is faster.
+          */
+      /*.groupBy(x => x._1)
       .filter(_._2.size >= minCount)
-      .mapValues {
-        x => x.groupBy(_._2).mapValues(_.size).map(_._2)
-      }.map { case (item, count) =>
-      val omega = count.sum.toDouble / inputCount
-      val giniSon = Gini.calculate(count
+      .mapValues { values =>
+        classCount.keys.map { label =>
+          values.filter{ case (item, itemLabel) =>  itemLabel == label }.size
+        }
+      }.map { case (item, classesCount) =>
+      val omega = classesCount.sum.toDouble / inputCount
+      val giniSon = Gini.calculate(classesCount
         .map(_.toDouble)
-        .toArray,count
-        .sum.toDouble)
+        .toArray, classesCount.sum.toDouble)
       (item, omega * (giniFather - giniSon))
-    }//.filter(_._2 >= minInfoGain)
-      .toArray
-      .sortBy(-_._2)
-      .map(_._1)*/
-
-      /*.groupBy(x => x._1).mapValues { items =>
-      classCount.keys.map { label =>
-        items.filter(_._2 == label).size
-      }
-    }.filter(x => x._2.sum.toLong >= minCount)
-      .map { case (item, count) =>
-        val omega = count.sum.toDouble / inputCount
-        val giniSon = Gini.calculate(count
-          .map(_.toDouble)
-          .toArray, count.sum.toDouble)
-        (item, omega * (giniFather - giniSon))
-      }.filter(_._2 > minInfoGain)
+    }//.filter(_._2 > minInfoGain)
       .toArray
       .sortBy(-_._2)
       .map(_._1)*/
@@ -289,7 +280,7 @@ class FPGrowth[Item] private (
     * @param minCount minimum count for frequent itemsets
     * @param freqItems frequent items
     * @param partitioner partitioner used to distribute transactions
-    * @return an RDD of (frequent itemset, count)
+    * @return an Iterable of rules
     */
   private def genAssocRules[Item: ClassTag](
                                            data: Iterable[(Array[Item], Item)],
@@ -304,19 +295,20 @@ class FPGrowth[Item] private (
     }.aggregate(new FPTree[Int, Item](classCount))(
       (tree, transaction) => tree.addAndCountClasses(transaction._2, 1L),
       (tree1, tree2) => tree1.merge(tree2))
-      .extractAssocRules(minCount, 10, minConfidence, minChi2, inputCount)
+      .extractAssocRules(minCount, rulesMaxLen, minConfidence, minChi2, inputCount)
       .map { case (ranks, label, sup, conf, chi2) =>
         new Rule[Item](ranks.map(i => freqItems(i)).toArray, label, sup, conf, chi2)
       }.toIterable
   }
 
   /**
-    * Generate frequent rule sets by building FP-Trees, the extraction is done on each partition.
+    * Generate most significant rule sets by building FP-Trees, the extraction is done on each partition.
     * @param data transactions
     * @param minCount minimum count for frequent itemsets
-    * @param items frequent items
+    * @param items frequent items ordered by most significant information gain
     * @param partitioner partitioner used to distribute transactions
-    * @return an RDD of (frequent itemset, count)
+    * @param sorted imply that itmes in transactions are yet ordered by their information gain values
+    * @return an Iterable of rules
     */
   private def genAssocRulesWInfoGain[Item: ClassTag](
                                              data: Iterable[(Array[Item], Item)],
@@ -341,7 +333,7 @@ class FPGrowth[Item] private (
       }.aggregate(new FPTree[Int, Item](classCount))(
         (tree, transaction) => tree.addAndCountClasses(transaction._2, 1L),
         (tree1, tree2) => tree1.merge(tree2))
-        .extractAssocRulesWInfoGain(minCount, 10, minConfidence, minChi2, inputCount)
+        .extractAssocRulesWInfoGain(minCount, rulesMaxLen, minConfidence, minChi2, inputCount)
         .map { case (ranks, label, sup, conf, chi2) =>
           new Rule[Item](ranks.map(i => items(i)).toArray, label, sup, conf, chi2)
         }.toIterable

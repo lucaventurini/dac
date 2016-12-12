@@ -1,6 +1,6 @@
-name := "BACv2"
+name := "BAC"
 
-version := "1.0"
+version := "2.0"
 
 scalaVersion := "2.10.4"
 
