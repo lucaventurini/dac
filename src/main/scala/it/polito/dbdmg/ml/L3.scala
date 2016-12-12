@@ -1,7 +1,7 @@
 package it.polito.dbdmg.ml
 
 import it.polito.dbdmg.spark.mllib.fpm.{FPGrowth => FPGrowthLocal}
-import org.apache.spark.{SparkContext, SparkException}
+import org.apache.spark.SparkException
 import org.apache.spark.mllib.fpm.{FPGrowth => PFP}
 import org.apache.spark.rdd.RDD
 
