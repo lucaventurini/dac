@@ -206,8 +206,8 @@ class L3EnsembleModel(val models:Array[L3LocalModel]) extends java.io.Serializab
     if (votes.nonEmpty) votes.maxBy(_._2)._1.getOrElse(defaultClass) else defaultClass
   }
 
-  def dbCoverage(dataset:Iterable[(Array[Long], Long)]) = {
-    new L3EnsembleModel(models.map(_.dBCoverage(dataset)))
+  def dbCoverage(dataset:Iterable[(Array[Long], Long)], saveSpare:Boolean = true) = {
+    new L3EnsembleModel(models.map(_.dBCoverage(dataset, saveSpare = saveSpare)))
   }
 
   override def toString() = {
@@ -245,20 +245,29 @@ class L3Ensemble (val numClasses:Int,
                   val strategy: String = "support",
                   val minInfoGain: Double = 0.0,
                   val rulesMaxLen: Int = 10,
+                  val saveSpare:Boolean = true,
+                  val withShuffling:Boolean = true,
                   val withReplacement:Boolean = true) extends java.io.Serializable{
 
   def train(input: RDD[(Array[Long], Long)]):L3EnsembleModel = {
     // N.B: numPartitions = numModels
     if (!(strategy.equals("gain") || strategy.equals("support")))
       throw new SparkException(s"Strategy must be gain or support but got: $strategy.")
+    if (!withShuffling && withReplacement)
+      throw new SparkException(s"Sampling with replacement without shuffling is deprecated. Aborting.")
+    if (!withShuffling && input.partitions.size < numModels)
+      throw new SparkException(s"Cannot generate $numModels models with only ${input.partitions.size} partitions. Aborting.")
     val l3 = new L3(numClasses, minSupport, minConfidence, minChi2, strategy)
+    val partitions: RDD[(Array[Long], Long)] = withShuffling match {
+      case true => input.keyBy(_ => Random.nextInt()).
+      sample(withReplacement, numModels * sampleSize). //TODO: stratified sampling
+      repartition(numModels).values
+      case false => input.sample(false, numModels * sampleSize).coalesce(numModels)}
     new L3EnsembleModel(
-      input.keyBy(_ => Random.nextInt()).
-        sample(withReplacement, numModels*sampleSize).//TODO: stratified sampling
-        repartition(numModels).
+      partitions.
         mapPartitions{ samples =>
-          val s = samples.toIterable.map(_._2) //todo: toArray ?
-        val model: L3LocalModel = l3.train(s).dBCoverage(s)
+          val s = samples.toIterable //todo: toArray ?
+        val model: L3LocalModel = l3.train(s).dBCoverage(s, saveSpare=saveSpare)
           Iterator(model)
         }.collect()
     )
