@@ -6,6 +6,8 @@ import org.apache.spark.mllib.fpm.{FPGrowth => PFP}
 import org.apache.spark.rdd.RDD
 
 import scala.util.Random
+import scala.collection.mutable.HashMap
+
 
 /**
   * Created by luca on 24/02/15.
@@ -291,7 +293,10 @@ class L3 (val numClasses:Int,
   def train(input: Iterable[(Array[Long], Long)]): L3LocalModel = {
     if (!(strategy.equals("gain") || strategy.equals("support")))
       throw new SparkException(s"Strategy must be gain or support but got: $strategy.")
-    val classCount = input.map(_._2).groupBy(x => x).mapValues(_.size)
+    def countByValue[T](xs: TraversableOnce[T]): Map[T, Int] = {
+      xs.foldLeft(HashMap.empty[T, Int].withDefaultValue(0))((acc, x) => { acc(x) += 1; acc}).toMap
+    }
+    val classCount = countByValue(input.map(_._2).toIterator)//.groupBy(x => x).mapValues(_.size)
     val defaultClass = classCount.maxBy(_._2)._1
     val fpg = new FPGrowthLocal[Long]()
       .setMinSupport(minSupport)
