@@ -257,8 +257,8 @@ class L3Ensemble (val numClasses:Int,
       throw new SparkException(s"Strategy must be gain or support but got: $strategy.")
     if (!withShuffling && withReplacement)
       throw new SparkException(s"Sampling with replacement without shuffling is deprecated. Aborting.")
-    if (!withShuffling && input.partitions.size < numModels)
-      throw new SparkException(s"Cannot generate $numModels models with only ${input.partitions.size} partitions. Aborting.")
+    if (!withShuffling && input.partitions.length < numModels)
+      throw new SparkException(s"Cannot generate $numModels models with only ${input.partitions.length} partitions. Aborting.")
     val l3 = new L3(numClasses, minSupport, minConfidence, minChi2, strategy)
     val partitions: RDD[(Array[Long], Long)] = withShuffling match {
       case true => input.keyBy(_ => Random.nextInt()).

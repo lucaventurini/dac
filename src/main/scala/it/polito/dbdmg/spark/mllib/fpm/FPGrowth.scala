@@ -33,10 +33,16 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.reflect.ClassTag
 import it.polito.dbdmg.ml.Rule
+import org.apache.log4j.Logger
 import org.apache.spark.mllib.regression.LabeledPoint
 
-import scala.collection.mutable.ArrayBuffer
+import scala.collection.mutable.{ArrayBuffer, HashMap}
 
+
+object Holder extends Serializable {
+//  @transient lazy val log = Logger.getLogger(getClass.getName)
+  @transient lazy val log = org.apache.log4j.LogManager.getLogger("myLogger")
+}
 
 /**
   * :: Experimental ::
@@ -223,19 +229,47 @@ class FPGrowth[Item] private (
                                             classCount: scala.collection.immutable.Map[Item, Int],
                                             inputCount: Long): Array[Item] = {
     val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
-    data.flatMap { case (items, label) =>
+    def countByLabel[T <: (Item, Item)](xs: TraversableOnce[T]): Map[Item, Array[Int]] = {
+      xs.foldLeft(HashMap.empty[Item, Array[Int]].withDefaultValue(Array.fill(classCount.size)(0)))(
+        (acc, x) => {
+          val cnt = {
+            if(!acc.contains(x._1)) Array.fill(classCount.size)(0)
+            else acc(x._1)
+          }
+//          val cnt = acc(x._1).clone()
+          cnt(x._2.toString.toInt) += 1
+          acc(x._1) = cnt
+          acc}).toMap
+    }
+    val itemAndLabels: Iterable[(Item, Item)] = data.flatMap { case (items, label) =>
       val uniq = items.toSet
-      if (items.size != uniq.size) {
+      if (items.length != uniq.size) {
         throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
       }
       items.map {
         i => (i, label)
       }
-    }.groupBy(x => x._1)
-      .filter(_._2.size >= minCount)
-      .mapValues {
-        x => x.groupBy(_._2).mapValues(_.size).map(_._2)
-      }.map { case (item, count) =>
+    }
+    Holder.log.info("FP-Growth: starting counting items...")
+
+    /*    val itemCountsByLabel: Map[Item, Iterable[Int]] = data.flatMap { case (items, label) =>
+          val uniq = items.toSet
+          if (items.size != uniq.size) {
+            throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
+          }
+          items.map {
+            i => (i, label)
+          }
+        }
+          .groupBy(x => x._1)
+          .filter(_._2.size >= minCount)
+          .mapValues {
+            x => x.groupBy(_._2).mapValues(_.size).values
+          }*/
+    val itemCountsByLabel = countByLabel(itemAndLabels).filter(_._2.sum >= minCount)
+    Holder.log.info("FP-Growth: items counted")
+    itemCountsByLabel
+      .map { case (item, count) =>
       val omega = count.sum.toDouble / inputCount
       val giniSon = Gini.calculate(count
         .map(_.toDouble)
@@ -243,9 +277,11 @@ class FPGrowth[Item] private (
         .sum.toDouble)
       (item, omega * (giniFather - giniSon))
     }//.filter(_._2 >= minInfoGain)
+      .filter(_._2 > 0)
       .toArray
       .sortBy(-_._2)
       .map(_._1)
+      .take(10000)
 
       /*
          alternative version: you can evaluate which one is better
