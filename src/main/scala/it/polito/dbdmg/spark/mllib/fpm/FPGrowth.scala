@@ -229,23 +229,22 @@ class FPGrowth[Item] private (
                                             classCount: scala.collection.immutable.Map[Item, Int],
                                             inputCount: Long): Array[Item] = {
     val giniFather = Gini.calculate(classCount.map(_._2.toDouble).toArray, inputCount.toDouble)
-    def countByLabel[T <: (Item, Item)](xs: TraversableOnce[T]): Map[Item, Array[Int]] = {
-      xs.foldLeft(HashMap.empty[Item, Array[Int]].withDefaultValue(Array.fill(classCount.size)(0)))(
+    def countByLabel[T <: (Item, Item)](xs: TraversableOnce[T]): Map[Item, Iterable[Int]] = {
+      xs.foldLeft(HashMap.empty[Item, mutable.Map[Item,Int]])(
         (acc, x) => {
           val cnt = {
-            if(!acc.contains(x._1)) Array.fill(classCount.size)(0)
+            if(!acc.contains(x._1)) mutable.HashMap.empty[Item,Int].withDefaultValue(0)
             else acc(x._1)
           }
-//          val cnt = acc(x._1).clone()
-          cnt(x._2.toString.toInt) += 1
+          cnt(x._2) += 1
           acc(x._1) = cnt
-          acc}).toMap
+          acc}).mapValues(_.values).toMap
     }
     val itemAndLabels: Iterable[(Item, Item)] = data.flatMap { case (items, label) =>
       val uniq = items.toSet
-      if (items.length != uniq.size) {
-        throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
-      }
+//      if (items.length != uniq.size) {
+//        throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
+//      }
       items.map {
         i => (i, label)
       }
@@ -281,7 +280,7 @@ class FPGrowth[Item] private (
       .toArray
       .sortBy(-_._2)
       .map(_._1)
-      .take(10000)
+//      .take(10000)
 
       /*
          alternative version: you can evaluate which one is better
