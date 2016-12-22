@@ -247,6 +247,7 @@ class L3Ensemble (val numClasses:Int,
                   val strategy: String = "support",
                   val minInfoGain: Double = 0.0,
                   val rulesMaxLen: Int = 10,
+                  val withDBCoverage:Boolean = true,
                   val saveSpare:Boolean = true,
                   val withShuffling:Boolean = true,
                   val withReplacement:Boolean = true) extends java.io.Serializable{
@@ -269,7 +270,10 @@ class L3Ensemble (val numClasses:Int,
       partitions.
         mapPartitions{ samples =>
           val s = samples.toIterable //todo: toArray ?
-        val model: L3LocalModel = l3.train(s).dBCoverage(s, saveSpare=saveSpare)
+        val model: L3LocalModel = {
+          if (withDBCoverage) l3.train(s).dBCoverage(s, saveSpare=saveSpare)
+          else l3.train(s)
+        }
           Iterator(model)
         }.collect()
     )
