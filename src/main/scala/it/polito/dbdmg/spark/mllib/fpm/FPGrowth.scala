@@ -232,16 +232,13 @@ class FPGrowth[Item] private (
     def countByLabel[T <: (Item, Item)](xs: TraversableOnce[T]): Map[Item, Iterable[Int]] = {
       xs.foldLeft(HashMap.empty[Item, mutable.Map[Item,Int]])(
         (acc, x) => {
-          val cnt = {
-            if(!acc.contains(x._1)) mutable.HashMap.empty[Item,Int].withDefaultValue(0)
-            else acc(x._1)
-          }
-          cnt(x._2) += 1
-          acc(x._1) = cnt
+          if(!acc.contains(x._1))
+            acc(x._1) = mutable.HashMap.empty[Item,Int].withDefaultValue(0)
+          acc(x._1)(x._2) += 1
           acc}).mapValues(_.values).toMap
     }
     val itemAndLabels: Iterable[(Item, Item)] = data.flatMap { case (items, label) =>
-      val uniq = items.toSet
+//      val uniq = items.toSet
 //      if (items.length != uniq.size) {
 //        throw new SparkException(s"Items in a transaction must be unique but got ${items.toSeq}.")
 //      }
