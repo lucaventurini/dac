@@ -49,6 +49,10 @@ case class Rule[T](antecedent:Array[T], consequent:T, support:Double, confidence
     antecedent.forall(x.contains(_))
   }
 
+  def appliesTo(x : Iterable[T]) : Boolean = {
+    antecedent.forall(a => x.exists(_==a))
+  }
+
   def appliesTo(x : (Array[T], T)) : Boolean = {
     antecedent.forall(x._1.contains(_))
   }
@@ -64,18 +68,28 @@ case class Rule[T](antecedent:Array[T], consequent:T, support:Double, confidence
 
 class L3LocalModel(val rules:List[Rule[Long]], val rulesIIlevel:List[Rule[Long]], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable {
 
-  def predict(transaction:Set[Long]):Long = {
+  @deprecated def predict(transaction:Set[Long]):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
     predictOption(transaction).getOrElse(defaultClass)
   }
-  def predictOption(transaction:Set[Long]):Option[Long] = {
+  @deprecated def predictOption(transaction:Set[Long]):Option[Long] = {
     rules.find(_.appliesTo(transaction)).map(_.consequent).
       orElse(rulesIIlevel.find(_.appliesTo(transaction)).map(_.consequent))
   }
 
-  def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
-    transactions.map(x => predict(x))
+  def predict[T<:Iterable[Long]](transaction:T):Long = {
+    //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
+    predictOption(transaction).getOrElse(defaultClass)
   }
+  def predictOption[T<:Iterable[Long]](transaction:T):Option[Long] = {
+    rules.find(_.appliesTo(transaction)).map(_.consequent).
+      orElse(rulesIIlevel.find(_.appliesTo(transaction)).map(_.consequent))
+  }
+
+  def predict[T<:Iterable[Long]](transactions:RDD[T]):RDD[Long] = {
+      transactions.map(x => predict(x))
+  }
+
 
   def dBCoverage(input: Iterable[(Array[Long], Long)], saveSpare: Boolean = true) : L3LocalModel = {
     val usedBuilder = List.newBuilder[Rule[Long]] //used rules : correctly predict at least one rule
@@ -140,7 +154,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numC
   }
 
 
-  def predict(transaction:Set[Long]):Long = {
+  def predict[T<:Iterable[Long]](transaction:T):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
     rules.find(_.appliesTo(transaction)).map(_.consequent).getOrElse(defaultClass)
   }
@@ -188,21 +202,21 @@ class L3EnsembleModel(val models:Array[L3LocalModel]) extends java.io.Serializab
   // choose default class by majority
   lazy val defaultClass : Long = models.map(_.defaultClass).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
 
-  def predict(transaction:Set[Long]):Long = {
+  def predict[T<:Iterable[Long]](transaction:T):Long = {
     /* use majority voting to select a prediction */
     predictMajorityOption(transaction)
   }
 
-  def predict(transactions:RDD[Set[Long]]):RDD[Long] = {
+  def predict[T<:Iterable[Long]](transactions:RDD[T]):RDD[Long] = {
     transactions.map(x => predict(x)) //todo: switch to models.map(_.predict(transactions)).majority_voting
   }
 
-  def predictMajority(transaction:Set[Long]):Long = {
+  def predictMajority[T<:Iterable[Long]](transaction:T):Long = {
     /* use majority voting to select a prediction */
     models.map(_.predict(transaction)).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1
   }
 
-  def predictMajorityOption(transaction:Set[Long]):Long = {
+  def predictMajorityOption[T<:Iterable[Long]](transaction:T):Long = {
     /* use majority voting to select a prediction */
     val votes = models.map(_.predictOption(transaction)).filter(_.nonEmpty).groupBy{label => label }.mapValues(_.size)
     if (votes.nonEmpty) votes.maxBy(_._2)._1.getOrElse(defaultClass) else defaultClass
