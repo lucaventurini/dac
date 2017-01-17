@@ -260,14 +260,17 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
 
   "The L3 Local model" should "predict a single value" in {
     model.predict(Set(20L, 22L)) should equal(0)
+    model.predict(Seq(20L, 22L)) should equal(0)
   }
 
   it should "predict when we have a superset of the items" in {
     model.predict(Set(20L, 45L, 22L)) should equal(0)
+    model.predict(Seq(20L, 45L, 22L)) should equal(0)
   }
 
   it should "predict something for items never seen" in {
     model.predict(Set(30L)) should equal(0)
+    model.predict(Seq(30L)) should equal(0)
   }
 
   it should "predict an RDD of values" in {
@@ -275,6 +278,15 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
       Set(20L, 22L),
       Set(21L)
     ))).count() should equal(2)
+  }
+
+  it should "predict probabilities" in {
+    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.classes should have size(2L)
+    model.predictProba(Seq(30L)) should have size(2L)
+    modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
   }
 
   "The DB coverage phase" should "filter harmful rules" in {
@@ -321,6 +333,17 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     modelbag.predict(sc.parallelize(List(Set(10L,12L)))).count() should equal(1)
     modelbag.predict(sc.parallelize(List(Set(10L,12L)))).first() should (equal(0) or equal(1))
 
+  }
+
+  it should "predict probabilities" in {
+    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(22L)).sum should equal(1.0)
+    model.predictProba(Seq(21L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.classes should have size(2L)
+    model.predictProba(Seq(30L)) should have size(2L)
+    model.predictProba(Seq(20L)).sum should equal(1.0)
   }
 
   "On Mushroom" should "extract 137 rules, with sup=3000 and conf=0.5" in {
@@ -373,8 +396,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
 
   it should "extract rules (2)" in {
     new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
-      """22 20 -> 1 (0.428571, 0.750000, 1.215278)
-        |24 -> 0 (0.428571, 0.600000, 2.100000)
+      """24 -> 0 (0.428571, 0.600000, 2.100000)
         |22 21 -> 1 (0.142857, 0.500000, 0.058333)""".stripMargin.split("\n"))
   }
 
@@ -390,7 +412,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   }
   it should "filter rules by confidence" in {
     new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.7, strategy = "gain").train(ex2).toString().split("\n") should equal(
-      """22 20 -> 1 (0.428571, 0.750000, 1.215278)""".stripMargin.split("\n"))
+      """22 -> 1 (0.428571, 0.750000, 1.215278)""".stripMargin.split("\n"))
   }
   it should "filter rules by chi2" in {
     new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
