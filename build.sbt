@@ -1,8 +1,8 @@
 name := "BAC"
 
-version := "2.0"
+version := "2.1"
 
-scalaVersion := "2.10.4"
+scalaVersion := "2.11.8"
 
 libraryDependencies += "org.apache.spark" %% "spark-core" % "1.3.0"
 

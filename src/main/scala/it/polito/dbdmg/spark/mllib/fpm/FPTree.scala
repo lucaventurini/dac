@@ -228,7 +228,7 @@ private[fpm] class FPTree[T, ClassType](val classCount: scala.collection.immutab
 
         if (it.isEmpty) {
           // genera regola (solo padre)
-          it ++ generateRule(node, minCount, maxLength, minConfidence, minChi2, inputCount)
+          generateRule(node, minCount, maxLength, minConfidence, minChi2, inputCount)
         } else {
           //genera regola (con figli)
           it.map { case (t, label, sup, conf, chi2) =>

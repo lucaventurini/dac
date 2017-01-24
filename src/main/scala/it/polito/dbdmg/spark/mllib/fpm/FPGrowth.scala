@@ -26,7 +26,9 @@ import org.apache.spark.annotation.Experimental
 import org.apache.spark.mllib.fpm.FPGrowth.FreqItemset
 import org.apache.spark.rdd.RDD
 import org.apache.spark.storage.StorageLevel
-import org.apache.spark.{HashPartitioner, Logging, Partitioner, SparkException}
+import org.apache.spark.{HashPartitioner, Partitioner, SparkException}
+//import org.apache.spark.Logging
+//import org.apache.spark.internal.Logging
 import org.apache.spark.mllib.tree.impurity.Gini
 
 import scala.collection.JavaConverters._
