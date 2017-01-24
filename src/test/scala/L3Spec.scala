@@ -289,6 +289,12 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
   }
 
+  it should "merge" in {
+    val oth = model.merge(model)
+    oth.rules.size should equal(model.rules.size)
+    oth.rulesIIlevel.size should equal(model.rulesIIlevel.size)
+  }
+
   "The DB coverage phase" should "filter harmful rules" in {
     model.dBCoverage(List((Array[Long](20, 21, 22),1L))).toString.split("\n") should
       equal("""22 21 -> 1 (0.333333, 0.500000, 1.500000)

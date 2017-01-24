@@ -155,6 +155,20 @@ class L3LocalModel(val rules:List[Rule[Long]],
 
   }
 
+  //define how to sum 2 or more rules here (for model reduction)
+  def sumRules(rules: List[Rule[Long]]): Rule[Long] = {
+    val conf = 1-rules.map(1-_.confidence).product //new conf = 1-PROD(1-conf_i)
+    val sup = rules.map(_.support).max // new support = max sup_i
+    val chi2 = rules.map(_.chi2).max
+    new Rule(rules(0).antecedent, rules(0).consequent, support = sup, confidence = conf, chi2 = chi2)
+  }
+
+  def merge(other: L3LocalModel):L3LocalModel = {
+    val rules = (this.rules++other.rules).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_)).values
+    val rulesII = (this.rulesIIlevel++other.rulesIIlevel).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_)).values
+    new L3LocalModel(rules.toList, rulesII.toList, numClasses = numClasses, classes = classes, defaultClass = defaultClass)
+  }
+
   override def toString() = {
     (rules ++ rulesIIlevel).map(_.toString).mkString("\n")
   }
@@ -240,6 +254,10 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
   // choose default class by majority, if preferred is not specified
   lazy val defaultClass : Long = {
     preferredClass.getOrElse(models.map(_.defaultClass).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1)
+  }
+
+  def lightModel:L3LocalModel = {
+    models.reduce(_.merge(_))
   }
 
   def setWithWeight(value: Boolean) = {
