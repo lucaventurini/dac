@@ -50,60 +50,60 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
   lazy val modelCovered = model.dBCoverage(data)
 
 
-    // Version 1
+  // Version 1
 
-    "The L3 rule extractor" should "extract rules" in {
-      new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
-        (Array(10, 11, 12), 0),
-        (Array(11, 12), 0),
-        (Array(12), 1)
-      )).toString().split("\n") should equal(
-        """11 12 -> 0 (0.666667, 1.000000, 3.000000)
-          |11 -> 0 (0.666667, 1.000000, 3.000000)
-          |10 11 12 -> 0 (0.333333, 1.000000, 0.750000)
-          |10 12 -> 0 (0.333333, 1.000000, 0.750000)
-          |10 11 -> 0 (0.333333, 1.000000, 0.750000)
-          |10 -> 0 (0.333333, 1.000000, 0.750000)
-          |12 -> 0 (0.666667, 0.666667, NaN)""".stripMargin.split("\n"))
-      /* without filters:
-       """10 12 -> 0 (0.333333, 1.000000, 0.750000)
-          |10 11 -> 0 (0.333333, 1.000000, 0.750000)
-          |11 -> 0 (0.666667, 1.000000, 3.000000)
-          |10 -> 0 (0.333333, 1.000000, 0.750000)
-          |11 12 -> 0 (0.666667, 1.000000, 3.000000)
-          |10 11 12 -> 0 (0.333333, 1.000000, 0.750000)
-          |12 -> 0 (0.666667, 0.666667, NaN)
-          |12 -> 1 (0.333333, 0.333333, NaN)"""
-       */
+  "The L3 rule extractor" should "extract rules" in {
+    new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
+      (Array(10, 11, 12), 0),
+      (Array(11, 12), 0),
+      (Array(12), 1)
+    )).toString().split("\n") should equal(
+      """11 12 -> 0 (0.666667, 1.000000, 3.000000)
+        |11 -> 0 (0.666667, 1.000000, 3.000000)
+        |10 11 12 -> 0 (0.333333, 1.000000, 0.750000)
+        |10 12 -> 0 (0.333333, 1.000000, 0.750000)
+        |10 11 -> 0 (0.333333, 1.000000, 0.750000)
+        |10 -> 0 (0.333333, 1.000000, 0.750000)
+        |12 -> 0 (0.666667, 0.666667, NaN)""".stripMargin.split("\n"))
+    /* without filters:
+     """10 12 -> 0 (0.333333, 1.000000, 0.750000)
+        |10 11 -> 0 (0.333333, 1.000000, 0.750000)
+        |11 -> 0 (0.666667, 1.000000, 3.000000)
+        |10 -> 0 (0.333333, 1.000000, 0.750000)
+        |11 12 -> 0 (0.666667, 1.000000, 3.000000)
+        |10 11 12 -> 0 (0.333333, 1.000000, 0.750000)
+        |12 -> 0 (0.666667, 0.666667, NaN)
+        |12 -> 1 (0.333333, 0.333333, NaN)"""
+     */
 
 
-    }
+  }
 
-    it should "extract rules and filter confidence" in {
-      model.toString().split("\n") should equal(
-        """20 21 -> 0 (0.500000, 0.750000, 0.375000)
-          |20 -> 0 (0.500000, 0.750000, 0.375000)
-          |22 20 21 -> 0 (0.333333, 0.666667, 0.000000)
-          |22 20 -> 0 (0.333333, 0.666667, 0.000000)
-          |21 -> 0 (0.500000, 0.600000, 0.600000)
-          |22 21 -> 1 (0.333333, 0.500000, 1.500000)
-          |22 21 -> 0 (0.333333, 0.500000, 1.500000)
-          |22 -> 1 (0.333333, 0.500000, 1.500000)
-          |22 -> 0 (0.333333, 0.500000, 1.500000)""".stripMargin.split("\n"))
-
-      /* without filters:
-      """22 -> 0 (0.333333, 0.500000, 1.500000)
-        |22 -> 1 (0.333333, 0.500000, 1.500000)
-        |22 21 -> 0 (0.333333, 0.500000, 1.500000)
-        |22 21 -> 1 (0.333333, 0.500000, 1.500000)
-        |20 21 -> 0 (0.500000, 0.750000, 0.375000)
-        |21 -> 0 (0.500000, 0.600000, 0.600000)
-        |21 -> 1 (0.333333, 0.400000, 0.600000)
-        |22 20 -> 0 (0.333333, 0.666667, 0.000000)
+  it should "extract rules and filter confidence" in {
+    model.toString().split("\n") should equal(
+      """20 21 -> 0 (0.500000, 0.750000, 0.375000)
+        |20 -> 0 (0.500000, 0.750000, 0.375000)
         |22 20 21 -> 0 (0.333333, 0.666667, 0.000000)
-        |20 -> 0 (0.500000, 0.750000, 0.375000)"""
-        */
-    }
+        |22 20 -> 0 (0.333333, 0.666667, 0.000000)
+        |21 -> 0 (0.500000, 0.600000, 0.600000)
+        |22 21 -> 1 (0.333333, 0.500000, 1.500000)
+        |22 21 -> 0 (0.333333, 0.500000, 1.500000)
+        |22 -> 1 (0.333333, 0.500000, 1.500000)
+        |22 -> 0 (0.333333, 0.500000, 1.500000)""".stripMargin.split("\n"))
+
+    /* without filters:
+    """22 -> 0 (0.333333, 0.500000, 1.500000)
+      |22 -> 1 (0.333333, 0.500000, 1.500000)
+      |22 21 -> 0 (0.333333, 0.500000, 1.500000)
+      |22 21 -> 1 (0.333333, 0.500000, 1.500000)
+      |20 21 -> 0 (0.500000, 0.750000, 0.375000)
+      |21 -> 0 (0.500000, 0.600000, 0.600000)
+      |21 -> 1 (0.333333, 0.400000, 0.600000)
+      |22 20 -> 0 (0.333333, 0.666667, 0.000000)
+      |22 20 21 -> 0 (0.333333, 0.666667, 0.000000)
+      |20 -> 0 (0.500000, 0.750000, 0.375000)"""
+      */
+  }
 
 
 
@@ -261,16 +261,19 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   "The L3 Local model" should "predict a single value" in {
     model.predict(Set(20L, 22L)) should equal(0)
     model.predict(Seq(20L, 22L)) should equal(0)
+    model.predict(Seq(20L, 22L), withVoting = false) should equal(0)
   }
 
   it should "predict when we have a superset of the items" in {
     model.predict(Set(20L, 45L, 22L)) should equal(0)
     model.predict(Seq(20L, 45L, 22L)) should equal(0)
+    model.predict(Seq(20L, 45L, 22L), withVoting = false) should equal(0)
   }
 
   it should "predict something for items never seen" in {
     model.predict(Set(30L)) should equal(0)
     model.predict(Seq(30L)) should equal(0)
+    model.predict(Seq(30L), withVoting = false) should equal(0)
   }
 
   it should "predict an RDD of values" in {
@@ -278,6 +281,10 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
       Set(20L, 22L),
       Set(21L)
     ))).count() should equal(2)
+//    model.predict(sc.parallelize(List(
+//      Set(20L, 22L),
+//      Set(21L)
+//    )), withVoting = false).count() should equal(2)
   }
 
   it should "predict probabilities" in {
@@ -287,6 +294,25 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     model.classes should have size(2L)
     model.predictProba(Seq(30L)) should have size(2L)
     modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
+    //same with numRules
+    model.setWeight("numRules")
+    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.classes should have size(2L)
+    model.predictProba(Seq(30L)) should have size(2L)
+    modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
+    model.setWeight("none")
+
+    model.setMetric("confidence")
+    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
+    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.classes should have size(2L)
+    model.predictProba(Seq(30L)) should have size(2L)
+    modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
+    model.setWeight("support")
+
   }
 
   it should "merge" in {
@@ -394,11 +420,11 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     (Array("A", "B", "D"), 1)
   )
 
-//  ignore should "work with string items" in {
-//    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3).train(ex3).toString().split("\n") should equal(
-//      """boh"""
-//    )
-//  }
+  //  ignore should "work with string items" in {
+  //    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3).train(ex3).toString().split("\n") should equal(
+  //      """boh"""
+  //    )
+  //  }
 
   it should "extract rules (2)" in {
     new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
@@ -426,4 +452,3 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   }
 
 }
-
