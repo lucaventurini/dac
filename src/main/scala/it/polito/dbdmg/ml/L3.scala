@@ -169,15 +169,15 @@ class L3LocalModel(val rules:List[Rule[Long]],
     classes
   }
 
-  lazy val getWeightedVoting : String = {
+  def getWeightedVoting : String = {
     weightedVoting.getOrElse("max")
   }
 
-  lazy val getMetric : String = {
+  def getMetric : String = {
     metric.getOrElse("support")
   }
 
-  lazy val getWeight : String = {
+  def getWeight : String = {
     weight.getOrElse("none")
   }
 
