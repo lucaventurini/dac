@@ -287,31 +287,51 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
 //    )), withVoting = false).count() should equal(2)
   }
 
+  val Eps = 1e-10 // Our epsilon
   it should "predict probabilities" in {
-    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(30L)).sum should be (1.0 +- Eps)
     model.classes should have size(2L)
     model.predictProba(Seq(30L)) should have size(2L)
-    modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
+    modelCovered.predictProba(Seq(20L)).sum should be (1.0 +- Eps)
     //same with numRules
     model.setWeight("numRules")
-    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(30L)).sum should be (1.0 +- Eps)
     model.classes should have size(2L)
     model.predictProba(Seq(30L)) should have size(2L)
-    modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
+    modelCovered.predictProba(Seq(20L)).sum should be (1.0 +- Eps)
     model.setWeight("none")
-
+    //with confidence metric
     model.setMetric("confidence")
-    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(30L)).sum should be (1.0 +- Eps)
     model.classes should have size(2L)
     model.predictProba(Seq(30L)) should have size(2L)
-    modelCovered.predictProba(Seq(20L)).sum should equal(1.0)
+    modelCovered.predictProba(Seq(20L)).sum should be (1.0 +- Eps)
     model.setWeight("support")
+
+    //with mean as weightedVoting
+    model.setWeightedVoting("mean")
+    model.predictProba(Seq(20L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(30L)).sum should be (1.0 +- Eps)
+    model.classes should have size(2L)
+    model.predictProba(Seq(30L)) should have size(2L)
+    modelCovered.predictProba(Seq(20L)).sum should be (1.0 +- Eps)
+    //with min as weightedVoting
+    model.setWeightedVoting("min")
+    model.predictProba(Seq(20L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(30L)).sum should be (1.0 +- Eps)
+    model.classes should have size(2L)
+    model.predictProba(Seq(30L)) should have size(2L)
+    modelCovered.predictProba(Seq(20L)).sum should be (1.0 +- Eps)
+    model.setWeightedVoting("max")
+
 
   }
 
@@ -368,14 +388,14 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   }
 
   it should "predict probabilities" in {
-    model.predictProba(Seq(20L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(22L)).sum should equal(1.0)
-    model.predictProba(Seq(21L)).sum should equal(1.0)
-    model.predictProba(Seq(20L, 45L, 22L)).sum should equal(1.0)
-    model.predictProba(Seq(30L)).sum should equal(1.0)
+    model.predictProba(Seq(20L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(21L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(20L, 45L, 22L)).sum should be (1.0 +- Eps)
+    model.predictProba(Seq(30L)).sum should be (1.0 +- Eps)
     model.classes should have size(2L)
     model.predictProba(Seq(30L)) should have size(2L)
-    model.predictProba(Seq(20L)).sum should equal(1.0)
+    model.predictProba(Seq(20L)).sum should be (1.0 +- Eps)
   }
 
   "On Mushroom" should "extract 137 rules, with sup=3000 and conf=0.5" in {

@@ -5,8 +5,8 @@ import org.apache.spark.SparkException
 import org.apache.spark.mllib.fpm.{FPGrowth => PFP}
 import org.apache.spark.rdd.RDD
 
-import scala.util.Random
 import scala.collection.mutable.HashMap
+import scala.util.Random
 
 
 /**
@@ -70,7 +70,6 @@ class L3LocalModel(val rules:List[Rule[Long]],
                    val rulesIIlevel:List[Rule[Long]],
                    val numClasses:Int,
                    val defaultClass:Long,
-//                   val defaultProba: Option[Array[Double]]=None,
                    val defaultProba: Array[Double],
                    val classes:Array[Long]=Array(0L,1L),
                    var weightedVoting: Option[String] = None,
@@ -113,57 +112,74 @@ class L3LocalModel(val rules:List[Rule[Long]],
     transactions.map(x => predict(x))
   }
 
-
   def predictProba[T<:Iterable[Long]](transaction:T):Array[Double] = {
     //considera solo le regole i cui antecedenti sono contenuti nella transazione
-    val rulesMatching = rules.filter(_.appliesTo(transaction))
-    if(rulesMatching.isEmpty){
-      return defaultProba
-    }
-    //    rules_matching.foreach(x => println(x.printAntecedent()+ " -> " + x.consequent + " ( " + x.support + ", " + x.confidence + " ) "))
+    if(getWeightedVoting.equals("max") && getMetric.equals("confidence") && getWeight.equals("none")) {
+      val k = orderedRules.mapValues(x => x.find(_.appliesTo(transaction))).filter(_._2.isDefined)
+      val votes = k.mapValues(_.get.confidence)
 
-    val votesForClass = rulesMatching.groupBy(_.consequent) //raggruppa per conseguenti (e quindi classi)
-
-    val votes = if(getMetric.equals("support")){
-      votesForClass.mapValues(_.map(1-_.support)) // take support as weight
-    } else {
-      votesForClass.mapValues(_.map(_.confidence)) // take confidence as weight
-    }
-
-    val votesWithVotingFunction: Map[Long, Double] = getWeightedVoting match {
-      case "mean" => {
-        votes.mapValues(w => w.sum/w.length)
+      if (votes.isEmpty) {
+        return defaultProba
       }
-      case "min" => {
-        votes.mapValues(weights => weights.min)  //voting function: MIN
-      }
-      case x => {
-        votes.mapValues(weights => weights.max)  //voting function: MAX
-      }
-    }
-    val probaRest = votesWithVotingFunction.map(1 - _._2).product //PROD(1-p_i)
 
-    if(getWeight.equals("numRules")){
-      val nRules = rulesMatching.length
-      val weights = votesForClass.mapValues(_.length.toDouble / nRules) //#regole per una data classe / regole tot
+      val probaRest = votes.map(1 - _._2).product //PROD(1-p_i)
 
-      val multiplier = (k: Long, v: Double) => v * votesWithVotingFunction.getOrElse(k, 0.toDouble)
-      val wP = weights.map(x => (x._1, multiplier(x._1, x._2)))
-
-      val p = classes.map(wP.getOrElse(_, probaRest))
-      val sumProba = p.sum
-
-      p.map(_ / sumProba)
-    } else {
-      //todo: use II level rules
-      val probas = classes.map(votesWithVotingFunction.getOrElse(_, probaRest))
+      val probas = classes.map(votes.getOrElse(_, probaRest))
       val sumProba = probas.sum
-
       probas.map(_ / sumProba)
+
+    } else {
+      val rulesMatching = rules.filter(_.appliesTo(transaction))
+      if (rulesMatching.isEmpty) {
+        return defaultProba
+      }
+
+      val votesForClass = rulesMatching.groupBy(_.consequent) //raggruppa per conseguenti (e quindi classi)
+
+      val v = if (getMetric.equals("support")) {
+        votesForClass.mapValues(_.map(1 - _.support)) // take support as weight
+      } else {
+        votesForClass.mapValues(_.map(_.confidence)) // take confidence as weight
+      }
+
+      val votesWithVotingFunction: Map[Long, Double] = getWeightedVoting match {
+        case "mean" => {
+          v.mapValues(w => w.sum / w.length)
+        }
+        case "min" => {
+          v.mapValues(weights => weights.min) //voting function: MIN
+        }
+        case x => {
+          v.mapValues(weights => weights.max) //voting function: MAX
+        }
+      }
+
+      val probaRest = votesWithVotingFunction.map(1 - _._2).product //PROD(1-p_i)
+
+      if(getWeight.equals("numRules")){
+        val nRules = votesForClass.map(x => x._2.length).sum
+        val weights = votesForClass.mapValues(_.length.toDouble / nRules) //#regole per una data classe / regole tot
+
+        val multiplier = (k: Long, v: Double) => v * votesWithVotingFunction.getOrElse(k, 0.toDouble)
+        val wP = weights.map(x => (x._1, multiplier(x._1, x._2)))
+
+        val p = classes.map(wP.getOrElse(_, probaRest))
+        val sumProba = p.sum
+
+        p.map(_ / sumProba)
+      } else {
+        //todo: use II level rules
+        val probas = classes.map(votesWithVotingFunction.getOrElse(_, probaRest))
+        val sumProba = probas.sum
+
+        probas.map(_ / sumProba)
+      }
     }
   }
 
-
+  lazy val orderedRules : Map[Long, List[Rule[Long]]] = {
+    rules.groupBy(_.consequent).mapValues(_.sorted)
+  }
 
   def getClasses: Array[Long] ={
     classes
@@ -246,7 +262,9 @@ class L3LocalModel(val rules:List[Rule[Long]],
   def merge(other: L3LocalModel, method: Option[String]=None):L3LocalModel = {
     val rules = (this.rules++other.rules).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_, method.getOrElse("max"))).values
     val rulesII = (this.rulesIIlevel++other.rulesIIlevel).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_, method.getOrElse("max"))).values
-    new L3LocalModel(rules.toList, rulesII.toList, numClasses = numClasses, classes = classes, defaultClass = defaultClass, defaultProba = defaultProba)
+    val l3model =  new L3LocalModel(rules.toList, rulesII.toList, numClasses = numClasses, classes = classes, defaultClass = defaultClass, defaultProba = defaultProba)
+    l3model.orderedRules
+    l3model
   }
 
   override def toString() = {
@@ -340,6 +358,8 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
   lazy val defaultProba : Array[Double] = {
     preferredProba.getOrElse(Array.fill[Double](models(0).numClasses){1.0/models(0).numClasses})
   }
+
+
 
   def lightModel(method: Option[String]=None) :L3LocalModel = {
     models.reduce(_.merge(_, method))
