@@ -5,8 +5,8 @@ import org.apache.spark.SparkException
 import org.apache.spark.mllib.fpm.{FPGrowth => PFP}
 import org.apache.spark.rdd.RDD
 
-import scala.util.Random
 import scala.collection.mutable.HashMap
+import scala.util.Random
 
 
 /**
@@ -70,9 +70,14 @@ class L3LocalModel(val rules:List[Rule[Long]],
                    val rulesIIlevel:List[Rule[Long]],
                    val numClasses:Int,
                    val defaultClass:Long,
-                   val classes:Array[Long]=Array(0L,1L)) extends java.io.Serializable {
+                   val defaultProba: Array[Double],
+                   val classes:Array[Long]=Array(0L,1L),
+                   var weightedVoting: Option[String] = None,
+                   var metric: Option[String] = None,
+                   var weight: Option[String] = None
+                  ) extends java.io.Serializable {
 
-//  lazy val classes = (rules).map(_.consequent).distinct.toArray //taking classes from 1st level only should work, no?
+  //  lazy val classes = (rules).map(_.consequent).distinct.toArray //taking classes from 1st level only should work, no?
 
   @deprecated def predict(transaction:Set[Long]):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
@@ -83,18 +88,18 @@ class L3LocalModel(val rules:List[Rule[Long]],
       orElse(rulesIIlevel.find(_.appliesTo(transaction)).map(_.consequent))
   }
 
-  def predict[T<:Iterable[Long]](transaction:T, withWeight:Boolean = false):Long = {
+  def predict[T<:Iterable[Long]](transaction:T, withVoting:Boolean = true):Long = {
     //sortedRules.filter(_.antecedent.subsetOf(transaction)).first().consequent
-    predictOption(transaction).getOrElse(defaultClass)
+    predictOption(transaction, withVoting = withVoting).getOrElse(defaultClass)
   }
-  def predictOption[T<:Iterable[Long]](transaction:T, withWeight:Boolean = false):Option[Long] = {
-    if (withWeight) {
+  def predictOption[T<:Iterable[Long]](transaction:T, withVoting:Boolean = true):Option[Long] = {
+    if (withVoting) {
       //use predictProba
       val votes = classes zip predictProba(transaction)
-        if (votes.isEmpty)
-          None
-        else
-          Some(votes.maxBy(_._2)._1)
+      if (votes.isEmpty)
+        None
+      else
+        Some(votes.maxBy(_._2)._1)
 
     } else {
       //classic prediction: first match
@@ -104,26 +109,108 @@ class L3LocalModel(val rules:List[Rule[Long]],
   }
 
   def predict[T<:Iterable[Long]](transactions:RDD[T]):RDD[Long] = {
-      transactions.map(x => predict(x))
+    transactions.map(x => predict(x))
   }
 
   def predictProba[T<:Iterable[Long]](transaction:T):Array[Double] = {
-    val votes = rules.filter(_.appliesTo(transaction))
-      .groupBy(_.consequent)
-//      .mapValues(_.map(_.confidence)) // take confidence as weight
-      .mapValues(_.map(_.support)) // take support as weight
-//      .mapValues(weights => 1-weights.map(1-_).product)  //voting function: 1-PROD(1-p_i)
-      .mapValues(weights => weights.max)  //voting function: MAX
-    //todo: use II level rules
-    val probaRest = votes.map(1 - _._2).product //PROD(1-p_i)
-    val probas = classes.map(votes.getOrElse(_, probaRest))
-    val sumProba = probas.sum
+    //considera solo le regole i cui antecedenti sono contenuti nella transazione
+    if(getWeightedVoting.equals("max") && getMetric.equals("confidence") && getWeight.equals("none")) {
+      val k = orderedRules.mapValues(x => x.find(_.appliesTo(transaction))).filter(_._2.isDefined)
+      val votes = k.mapValues(_.get.confidence)
 
-    probas.map(_ / sumProba)
+      if (votes.isEmpty) {
+        return defaultProba
+      }
+
+      val probaRest = votes.map(1 - _._2).product //PROD(1-p_i)
+
+      val probas = classes.map(votes.getOrElse(_, probaRest))
+      val sumProba = probas.sum
+      probas.map(_ / sumProba)
+
+    } else {
+      val rulesMatching = rules.filter(_.appliesTo(transaction))
+      if (rulesMatching.isEmpty) {
+        return defaultProba
+      }
+
+      val votesForClass = rulesMatching.groupBy(_.consequent) //raggruppa per conseguenti (e quindi classi)
+
+      val v = if (getMetric.equals("support")) {
+        votesForClass.mapValues(_.map(1 - _.support)) // take support as weight
+      } else {
+        votesForClass.mapValues(_.map(_.confidence)) // take confidence as weight
+      }
+
+      val votesWithVotingFunction: Map[Long, Double] = getWeightedVoting match {
+        case "mean" => {
+          v.mapValues(w => w.sum / w.length)
+        }
+        case "min" => {
+          v.mapValues(weights => weights.min) //voting function: MIN
+        }
+        case x => {
+          v.mapValues(weights => weights.max) //voting function: MAX
+        }
+      }
+
+      val probaRest = votesWithVotingFunction.map(1 - _._2).product //PROD(1-p_i)
+
+      if(getWeight.equals("numRules")){
+        val nRules = votesForClass.map(x => x._2.length).sum
+        val weights = votesForClass.mapValues(_.length.toDouble / nRules) //#regole per una data classe / regole tot
+
+        val multiplier = (k: Long, v: Double) => v * votesWithVotingFunction.getOrElse(k, 0.toDouble)
+        val wP = weights.map(x => (x._1, multiplier(x._1, x._2)))
+
+        val p = classes.map(wP.getOrElse(_, probaRest))
+        val sumProba = p.sum
+
+        p.map(_ / sumProba)
+      } else {
+        //todo: use II level rules
+        val probas = classes.map(votesWithVotingFunction.getOrElse(_, probaRest))
+        val sumProba = probas.sum
+
+        probas.map(_ / sumProba)
+      }
+    }
+  }
+
+  lazy val orderedRules : Map[Long, List[Rule[Long]]] = {
+    rules.groupBy(_.consequent).mapValues(_.sorted)
+  }
+
+  def getClasses: Array[Long] ={
+    classes
+  }
+
+  def getWeightedVoting : String = {
+    weightedVoting.getOrElse("max")
+  }
+
+  def getMetric : String = {
+    metric.getOrElse("support")
+  }
+
+  def getWeight : String = {
+    weight.getOrElse("none")
+  }
+
+  def setWeightedVoting(value: String) = {
+    weightedVoting = Some(value)
+  }
+
+  def setMetric(value: String) = {
+    metric = Some(value)
+  }
+
+  def setWeight(value: String) = {
+    weight = Some(value)
   }
 
   def predictProba[T<:Iterable[Long]](transactions:RDD[T]):RDD[Array[Double]] = {
-      transactions.map(x => predictProba(x))
+    transactions.map(x => predictProba(x))
   }
 
 
@@ -150,23 +237,34 @@ class L3LocalModel(val rules:List[Rule[Long]],
         }
       }
     }
-
-    new L3LocalModel(usedBuilder.result, spareBuilder.result, numClasses, defaultClass)
+    new L3LocalModel(usedBuilder.result, spareBuilder.result, numClasses, defaultClass, defaultProba)
 
   }
 
   //define how to sum 2 or more rules here (for model reduction)
-  def sumRules(rules: List[Rule[Long]]): Rule[Long] = {
-    val conf = 1-rules.map(1-_.confidence).product //new conf = 1-PROD(1-conf_i)
-    val sup = rules.map(_.support).max // new support = max sup_i
+  def sumRules(rules: List[Rule[Long]], method: String): Rule[Long] = {
+    val (conf, sup) = method match {
+      case "product" => {
+        //new conf = 1-PROD(1-conf_i)
+        (1-rules.map(1-_.confidence).product, 1-rules.map(1-_.support).product)
+      }
+      case "min" => {
+        (rules.map(_.confidence).min, rules.map(_.support).min)
+      }
+      case "max" => {
+        (rules.map(_.confidence).max, rules.map(_.support).max)
+      }
+    }
     val chi2 = rules.map(_.chi2).max
     new Rule(rules(0).antecedent, rules(0).consequent, support = sup, confidence = conf, chi2 = chi2)
   }
 
-  def merge(other: L3LocalModel):L3LocalModel = {
-    val rules = (this.rules++other.rules).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_)).values
-    val rulesII = (this.rulesIIlevel++other.rulesIIlevel).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_)).values
-    new L3LocalModel(rules.toList, rulesII.toList, numClasses = numClasses, classes = classes, defaultClass = defaultClass)
+  def merge(other: L3LocalModel, method: Option[String]=None):L3LocalModel = {
+    val rules = (this.rules++other.rules).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_, method.getOrElse("max"))).values
+    val rulesII = (this.rulesIIlevel++other.rulesIIlevel).groupBy(x => (x.antecedent.toSet, x.consequent)).mapValues(sumRules(_, method.getOrElse("max"))).values
+    val l3model =  new L3LocalModel(rules.toList, rulesII.toList, numClasses = numClasses, classes = classes, defaultClass = defaultClass, defaultProba = defaultProba)
+    l3model.orderedRules
+    l3model
   }
 
   override def toString() = {
@@ -249,6 +347,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numC
 
 class L3EnsembleModel(val models:Array[L3LocalModel],
                       val preferredClass:Option[Long]=None,
+                      val preferredProba:Option[Array[Double]]=None,
                       var withWeight:Boolean = false) extends java.io.Serializable {
 
   // choose default class by majority, if preferred is not specified
@@ -256,8 +355,14 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
     preferredClass.getOrElse(models.map(_.defaultClass).groupBy{label => label }.mapValues(_.size).maxBy(_._2)._1)
   }
 
-  def lightModel:L3LocalModel = {
-    models.reduce(_.merge(_))
+  lazy val defaultProba : Array[Double] = {
+    preferredProba.getOrElse(Array.fill[Double](models(0).numClasses){1.0/models(0).numClasses})
+  }
+
+
+
+  def lightModel(method: Option[String]=None) :L3LocalModel = {
+    models.reduce(_.merge(_, method))
   }
 
   def setWithWeight(value: Boolean) = {
@@ -272,9 +377,11 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
     /* use majority voting to select a prediction */
     predictMajorityOption(transaction)
   }
+
+  @deprecated(message = "use lightModel.predictProba() instead.")
   def predictProba[T<:Iterable[Long]](transaction:T):Array[Double] = {
-//    val probas = models.map(_.predictProba(transaction).map(1-_)).reduce((a, b) => (a zip b).map(x => x._1*x._2)).map(1-_) //1 - PROD (1-p_i)
-//    val probas = models.map(_.predictProba(transaction)).reduce((a, b) => (a zip b).map(x => x._1*x._2)) //PROD (p_i)
+    //    val probas = models.map(_.predictProba(transaction).map(1-_)).reduce((a, b) => (a zip b).map(x => x._1*x._2)).map(1-_) //1 - PROD (1-p_i)
+    //    val probas = models.map(_.predictProba(transaction)).reduce((a, b) => (a zip b).map(x => x._1*x._2)) //PROD (p_i)
     val probas = models.map(_.predictProba(transaction)).reduce((a, b) => (a zip b).map(x => x._1+x._2)) //SUM (p_i)
     val sum = probas.sum
     probas.map(_ / sum) //normalize
@@ -294,7 +401,7 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
 
   def predictMajorityOption[T<:Iterable[Long]](transaction:T):Long = {
     /* use majority voting to select a prediction */
-    val votes = models.map(_.predictOption(transaction, withWeight = withWeight)).filter(_.nonEmpty).groupBy{label => label }.mapValues(_.size)
+    val votes = models.map(_.predictOption(transaction, withVoting = withWeight)).filter(_.nonEmpty).groupBy{ label => label }.mapValues(_.size)
     if (votes.nonEmpty) votes.maxBy(_._2)._1.getOrElse(defaultClass) else defaultClass
   }
 
@@ -339,6 +446,7 @@ class L3Ensemble (val numClasses:Int,
                   val minInfoGain: Double = 0.0,
                   val rulesMaxLen: Int = 10,
                   val preferredClass: Option[Long] = None,
+                  val preferredProba:Option[Array[Double]]=None,
                   val withDBCoverage:Boolean = true,
                   val saveSpare:Boolean = true,
                   val withShuffling:Boolean = true,
@@ -352,11 +460,11 @@ class L3Ensemble (val numClasses:Int,
       throw new SparkException(s"Sampling with replacement without shuffling is deprecated. Aborting.")
     if (!withShuffling && input.partitions.length < numModels)
       throw new SparkException(s"Cannot generate $numModels models with only ${input.partitions.length} partitions. Aborting.")
-    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2, strategy)
+    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2, strategy, preferredProba)
     val partitions: RDD[(Array[Long], Long)] = withShuffling match {
       case true => input.keyBy(_ => Random.nextInt()).
-      sample(withReplacement, numModels * sampleSize). //TODO: stratified sampling
-      repartition(numModels).values
+        sample(withReplacement, numModels * sampleSize). //TODO: stratified sampling
+        repartition(numModels).values
       case false => input.sample(false, numModels * sampleSize).coalesce(numModels)}
     new L3EnsembleModel(
       partitions.
@@ -368,7 +476,8 @@ class L3Ensemble (val numClasses:Int,
         }
           Iterator(model)
         }.collect(),
-      preferredClass
+      preferredClass,
+      preferredProba
     )
   }
 
@@ -376,6 +485,9 @@ class L3Ensemble (val numClasses:Int,
     if (strategy.equals("gain")) true else false
   }
 
+  def getPreferredProba(): Option[Array[Double]] = {
+    preferredProba
+  }
 
 }
 
@@ -384,6 +496,7 @@ class L3 (val numClasses:Int,
           val minConfidence:Double = 0.5,
           val minChi2:Double = 3.841,
           val strategy: String = "support",
+          val preferredProba:Option[Array[Double]]=None,
           val minInfoGain: Double = 0.0,
           val rulesMaxLen: Int = 10) extends java.io.Serializable{
 
@@ -404,8 +517,8 @@ class L3 (val numClasses:Int,
       .setRulesMaxLength(rulesMaxLen)
 
     val rules = fpg.run(input, classCount)
-
-    new L3LocalModel(rules.toList.sorted, List(), numClasses, defaultClass)
+    val p = preferredProba.getOrElse(Array.fill[Double](numClasses)(1.0/numClasses))
+    new L3LocalModel(rules.toList.sorted, List(), numClasses, defaultClass, p)
 
   }
 
