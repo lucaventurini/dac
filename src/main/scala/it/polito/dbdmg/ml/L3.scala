@@ -121,8 +121,8 @@ class L3LocalModel(val rules:List[Rule[Long]],
       if (votes.isEmpty) {
         return defaultProba
       }
-
-      val probaRest = votes.map(1 - _._2).product //PROD(1-p_i)
+      val classesWithoutVotes = classes.size - votes.size
+      val probaRest = votes.map(1 - _._2).product / classesWithoutVotes //PROD(1-p_i)/|X|
 
       val probas = classes.map(votes.getOrElse(_, probaRest))
       val sumProba = probas.sum
@@ -348,6 +348,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numC
 class L3EnsembleModel(val models:Array[L3LocalModel],
                       val preferredClass:Option[Long]=None,
                       val preferredProba:Option[Array[Double]]=None,
+                      val classes:Array[Long]=Array(0L,1L),
                       var withWeight:Boolean = false) extends java.io.Serializable {
 
   // choose default class by majority, if preferred is not specified
@@ -445,6 +446,7 @@ class L3Ensemble (val numClasses:Int,
                   val strategy: String = "support",
                   val minInfoGain: Double = 0.0,
                   val rulesMaxLen: Int = 10,
+                  val classes:Array[Long]=Array(0L,1L),
                   val preferredClass: Option[Long] = None,
                   val preferredProba:Option[Array[Double]]=None,
                   val withDBCoverage:Boolean = true,
@@ -477,7 +479,8 @@ class L3Ensemble (val numClasses:Int,
           Iterator(model)
         }.collect(),
       preferredClass,
-      preferredProba
+      preferredProba,
+      classes=classes
     )
   }
 
