@@ -20,7 +20,7 @@ The test error is calculated to measure the algorithm accuracy.
 Note that each record is an array of `Long`, and the least integer in the row is used as class label, while all the other items are used as features.
 
 ```scala
-import it.polito.dbdmg.ml.L3Ensemble
+import it.polito.dbdmg.ml.DACEnsemble
 
 // Load and parse the data file.
 val inf = sc.textFile(inputFile)
@@ -35,7 +35,7 @@ val numClasses = 3
 val minSupport = 0.1
 val sampleSize = 0.1
 
-val model = new L3Ensemble(numModels = numModels, numClasses = numClasses, minSupport = minSupport, sampleSize = sampleSize)
+val model = new DACEnsemble(numModels = numModels, numClasses = numClasses, minSupport = minSupport, sampleSize = sampleSize)
 
 // Evaluate model on test instances and compute test error
 val labelAndPreds = testData.map { point =>
