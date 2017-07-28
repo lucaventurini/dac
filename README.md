@@ -1,6 +1,6 @@
-BAC
+DAC
 =======
-BAC is a scalable Bagged Associative Classifier built on Apache Spark.
+DAC is a Distributed Associative Classifier built on Apache Spark.
 
 The algorithm builds multiple associative classifiers in parallel, finally combining them in a single model by exploiting [Bagging](https://en.wikipedia.org/wiki/Bootstrap_aggregating).
 
@@ -51,19 +51,19 @@ println("Learned BAC model:\n" + model.toDebugString)
 ## Standalone usage
 ### Compile
 
-The project uses sbt to compile & build the BAC tool. The following command downloads the dependencies, compiles the code, and creates the required jar file in the `target` directory.
+The project uses sbt to compile & build the DAC tool. The following command downloads the dependencies, compiles the code, and creates the required jar file in the `target` directory.
 
 	sbt package
 
-The generated jar file, containing BAC, is in `target/scala-2.10/bac_2.10-0.2.jar`
+The generated jar file, containing DAC, is in `target/scala-2.10/dac_2.10-0.2.jar`
 
-The jar file bac_2.10-0.2.jar includes also all the needed dependencies. Hence, no libraries need to be uploaded on the Hadoop cluster in order to run BAC.
+The jar file dac_2.10-0.2.jar includes also all the needed dependencies. Hence, no libraries need to be uploaded on the Hadoop cluster in order to run BAC.
 
 Please note that the implementation is developed and tested on 2.5.0-cdh5.3.1 Cloudera configuration.
 
 ### Input dataset format
 
-The input dataset for the class BacUciCv is a list of records with n+1 columns separated by comma, where n is the number of features and the last column is the class label of the record.
+The input dataset for the class DacUciCv is a list of records with n+1 columns separated by comma, where n is the number of features and the last column is the class label of the record.
 The first line can be optionally an header, marked by an initial `|`.
 The following is an example extracted from the IRIS dataset converted to this format and discretized, which is available online at https://www.sgi.com/tech/mlc/db/ together with other UCI datasets:
 
@@ -76,7 +76,7 @@ The following is an example extracted from the IRIS dataset converted to this fo
 
 ### Run
 
-The class BacUciCv executes a 10-fold cross-validation of the BAC algorithm on a given input dataset, and outputs the results of the cross-validation on stdout.
+The class DacUciCv executes a 10-fold cross-validation of the DAC algorithm on a given input dataset, and outputs the results of the cross-validation on stdout.
 
 To run it, be sure of having a discretized dataset in the above-mentioned format, let's say `iris.data`, and then run:
 
