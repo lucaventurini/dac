@@ -31,7 +31,7 @@ trait MLlibTestSparkContext extends BeforeAndAfterAll { self: Suite =>
 }
 
 
-class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
+class DACSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
 
   val input = List[Array[Long]](
     Array(0, 10, 11, 12),
@@ -45,7 +45,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
     x => val (p0, p1) = x.partition(_ < 2)
       (p1 ,p0.head)
   }
-  lazy val l3 = new L3(numClasses = 2, minChi2 = 0.0, strategy = "support")
+  lazy val l3 = new DAC(numClasses = 2, minChi2 = 0.0, strategy = "support")
   lazy val model = l3.train(data)
   lazy val modelCovered = model.dBCoverage(data)
 
@@ -53,7 +53,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
   // Version 1
 
   "The L3 rule extractor" should "extract rules" in {
-    new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
+    new DAC(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
       (Array(10, 11, 12), 0),
       (Array(11, 12), 0),
       (Array(12), 1)
@@ -157,7 +157,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
     x => val (t0, t1) = x.partition(_ < 2)
       (t1, t0.head)
   }
-  lazy val modelbag = new L3Ensemble(numClasses = 2, numModels = 2, strategy = "support").train(sc.parallelize(labeledPoints))
+  lazy val modelbag = new DACEnsemble(numClasses = 2, numModels = 2, strategy = "support").train(sc.parallelize(labeledPoints))
 
   "Bagging" should "do something" in {
     modelbag.predict(Set(10L,12L)) should (equal(0) or equal(1))
@@ -176,7 +176,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
         (t1, t0.head)
     }
 
-    val l3 = new L3(numClasses = 3, minSupport = 0.369, minChi2 = 0, strategy = "support") //they start from 1, minsup=3000
+    val l3 = new DAC(numClasses = 3, minSupport = 0.369, minChi2 = 0, strategy = "support") //they start from 1, minsup=3000
 
     val model=l3.train(transactions)
 
@@ -185,7 +185,7 @@ class L3Spec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
 
 }
 
-class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
+class DACLocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContext{
 
   val input = List[(Array[Long], Long)](
     (Array(10, 11, 12),0),
@@ -195,12 +195,12 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     (Array(20, 21),0),
     (Array(21, 22),1)
   )
-  lazy val model:L3LocalModel = {new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(input)}
+  lazy val model:L3LocalModel = {new DAC(numClasses = 2, minChi2 = 0.0, strategy = "support").train(input)}
 
   lazy val modelCovered = model.dBCoverage(input)
 
   "The L3 Local rule extractor" should "extract rules" in {
-    new L3(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
+    new DAC(numClasses = 2, minChi2 = 0.0, strategy = "support").train(List[(Array[Long], Long)](
       (Array(10, 11, 12),0),
       (Array(11, 12),0),
       (Array(12),1)
@@ -371,7 +371,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
     x => val (t0, t1) = x.partition(_ < 2)
       (t1, t0.head)
   }
-  lazy val modelbag = new L3Ensemble(numClasses = 2, numModels = 2, strategy = "support").train(sc.parallelize(labeledPoints))
+  lazy val modelbag = new DACEnsemble(numClasses = 2, numModels = 2, strategy = "support").train(sc.parallelize(labeledPoints))
 
   "Bagging" should "do something" in {
     modelbag.predict(Set(10L,12L)) should (equal(0) or equal(1))
@@ -405,7 +405,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
       x => val (t0, t1) = x.partition(_ < 3)
         (t1, t0.head)
     }
-    val l3 = new L3(numClasses = 3, minSupport = 0.369, minChi2 = 0, strategy = "support") //they start from 1, minsup=3000
+    val l3 = new DAC(numClasses = 3, minSupport = 0.369, minChi2 = 0, strategy = "support") //they start from 1, minsup=3000
 
     val model=l3.train(transactions)
 
@@ -413,7 +413,7 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   }
 
   "The L3 version 2 (with information gain) rules extractor" should "extract rules" in {
-    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, strategy = "gain").train(List[(Array[Long], Long)](
+    new DAC(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, strategy = "gain").train(List[(Array[Long], Long)](
       (Array(14, 13, 11, 10), 0),
       (Array(13, 12, 10), 1),
       (Array(14, 13, 11, 10), 0),
@@ -447,27 +447,27 @@ class L3LocalSpec extends FlatSpec with ShouldMatchers with MLlibTestSparkContex
   //  }
 
   it should "extract rules (2)" in {
-    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
+    new DAC(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
       """24 -> 0 (0.428571, 0.600000, 2.100000)
         |22 21 -> 1 (0.142857, 0.500000, 0.058333)""".stripMargin.split("\n"))
   }
 
   it should "filter rules" in {
-    new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.2, minConfidence = 0.6, strategy = "gain").train(ex2).toString().split("\n") should equal(
+    new DAC(numClasses = 2, minChi2 = 2.0, minSupport = 0.2, minConfidence = 0.6, strategy = "gain").train(ex2).toString().split("\n") should equal(
       """24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
   }
   it should "filter rules by support" in {
     /*N.B.: rule 22 20 -> 1 becomes 22 -> with the higher minSupport*/
-    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.2, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
+    new DAC(numClasses = 2, minChi2 = 0.0, minSupport = 0.2, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
       """22 -> 1 (0.428571, 0.750000, 1.215278)
         |24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
   }
   it should "filter rules by confidence" in {
-    new L3(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.7, strategy = "gain").train(ex2).toString().split("\n") should equal(
+    new DAC(numClasses = 2, minChi2 = 0.0, minSupport = 0.1, minConfidence = 0.7, strategy = "gain").train(ex2).toString().split("\n") should equal(
       """22 -> 1 (0.428571, 0.750000, 1.215278)""".stripMargin.split("\n"))
   }
   it should "filter rules by chi2" in {
-    new L3(numClasses = 2, minChi2 = 2.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
+    new DAC(numClasses = 2, minChi2 = 2.0, minSupport = 0.1, minConfidence = 0.3, strategy = "gain").train(ex2).toString().split("\n") should equal(
       """24 -> 0 (0.428571, 0.600000, 2.100000)""".stripMargin.split("\n"))
   }
 

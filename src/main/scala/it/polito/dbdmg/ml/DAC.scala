@@ -286,7 +286,7 @@ class L3LocalModel(val rules:List[Rule[Long]],
 
 }
 
-class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{ //todo: serialize with Kryo?
+class DACModel(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numClasses:Int, val defaultClass:Long) extends java.io.Serializable{ //todo: serialize with Kryo?
 
   //var rules: List[Rule] = rules.sortBy(x => (x.confidence,x.support,x.antecedent.size,x.antecedent.mkString(", ")), ascending = false).collect().toList//todo: lex order is inverted
 
@@ -311,7 +311,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numC
     transactions.map(x => predict(x)) //does not work: Spark does not support nested RDDs ops
   }
 
-  def dBCoverage(input: RDD[Array[Long]] = dataset) : L3Model = {
+  def dBCoverage(input: RDD[Array[Long]] = dataset) : DACModel = {
     val usedBuilder = List.newBuilder[Rule[Long]] //used rules : correctly predict at least one rule
     val spareBuilder = List.newBuilder[Rule[Long]] //spare rules : do not predict, but not harmful
     var db = input.collect()
@@ -335,7 +335,7 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numC
       }
     }
 
-    new L3Model(dataset, usedBuilder.result ::: spareBuilder.result, numClasses, defaultClass)
+    new DACModel(dataset, usedBuilder.result ::: spareBuilder.result, numClasses, defaultClass)
 
   }
 
@@ -345,11 +345,11 @@ class L3Model(val dataset:RDD[Array[Long]], val rules:List[Rule[Long]], val numC
 
 }
 
-class L3EnsembleModel(val models:Array[L3LocalModel],
-                      val preferredClass:Option[Long]=None,
-                      val preferredProba:Option[Array[Double]]=None,
-                      val classes:Array[Long]=Array(0L,1L),
-                      var withWeight:Boolean = false) extends java.io.Serializable {
+class DACEnsembleModel(val models:Array[L3LocalModel],
+                       val preferredClass:Option[Long]=None,
+                       val preferredProba:Option[Array[Double]]=None,
+                       val classes:Array[Long]=Array(0L,1L),
+                       var withWeight:Boolean = false) extends java.io.Serializable {
 
   // choose default class by majority, if preferred is not specified
   lazy val defaultClass : Long = {
@@ -407,7 +407,7 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
   }
 
   def dbCoverage(dataset:Iterable[(Array[Long], Long)], saveSpare:Boolean = true) = {
-    new L3EnsembleModel(models.map(_.dBCoverage(dataset, saveSpare = saveSpare)))
+    new DACEnsembleModel(models.map(_.dBCoverage(dataset, saveSpare = saveSpare)))
   }
 
   override def toString() = {
@@ -437,7 +437,7 @@ class L3EnsembleModel(val models:Array[L3LocalModel],
 
 }
 
-class L3Ensemble (val numClasses:Int,
+class DACEnsemble(val numClasses:Int,
                   val numModels:Int = 100,
                   val sampleSize:Double = 0.01,
                   val minSupport:Double = 0.2,
@@ -454,7 +454,7 @@ class L3Ensemble (val numClasses:Int,
                   val withShuffling:Boolean = true,
                   val withReplacement:Boolean = true) extends java.io.Serializable{
 
-  def train(input: RDD[(Array[Long], Long)]):L3EnsembleModel = {
+  def train(input: RDD[(Array[Long], Long)]):DACEnsembleModel = {
     // N.B: numPartitions = numModels
     if (!(strategy.equals("gain") || strategy.equals("support")))
       throw new SparkException(s"Strategy must be gain or support but got: $strategy.")
@@ -462,13 +462,13 @@ class L3Ensemble (val numClasses:Int,
       throw new SparkException(s"Sampling with replacement without shuffling is deprecated. Aborting.")
     if (!withShuffling && input.partitions.length < numModels)
       throw new SparkException(s"Cannot generate $numModels models with only ${input.partitions.length} partitions. Aborting.")
-    val l3 = new L3(numClasses, minSupport, minConfidence, minChi2, strategy, preferredProba)
+    val l3 = new DAC(numClasses, minSupport, minConfidence, minChi2, strategy, preferredProba)
     val partitions: RDD[(Array[Long], Long)] = withShuffling match {
       case true => input.keyBy(_ => Random.nextInt()).
         sample(withReplacement, numModels * sampleSize). //TODO: stratified sampling
         repartition(numModels).values
       case false => input.sample(false, numModels * sampleSize).coalesce(numModels)}
-    new L3EnsembleModel(
+    new DACEnsembleModel(
       partitions.
         mapPartitions{ samples =>
           val s = samples.toIterable //todo: toArray ?
@@ -494,7 +494,7 @@ class L3Ensemble (val numClasses:Int,
 
 }
 
-class L3 (val numClasses:Int,
+class DAC(val numClasses:Int,
           val minSupport:Double = 0.2,
           val minConfidence:Double = 0.5,
           val minChi2:Double = 3.841,
@@ -532,7 +532,7 @@ class L3 (val numClasses:Int,
    * information in building FP-Tree so cannot extract rules directly.
    * Obsolete
    */
-  @deprecated def train(input: RDD[Array[Long]]): L3Model = {
+  @deprecated def train(input: RDD[Array[Long]]): DACModel = {
 
     val count = input.count()
 
@@ -568,7 +568,7 @@ class L3 (val numClasses:Int,
       }
     }.filter(r => r.confidence >= minConfidence && (r.chi2 >= minChi2 || r.chi2.isNaN))
 
-    new L3Model(input, rules, numClasses, supClasses.maxBy(_._2)._1)
+    new DACModel(input, rules, numClasses, supClasses.maxBy(_._2)._1)
   }
 
   def withInformationGain(): Boolean = {

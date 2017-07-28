@@ -1,13 +1,13 @@
 import java.io.{File, FileWriter, PrintWriter}
 
-import it.polito.dbdmg.ml.L3Ensemble
+import it.polito.dbdmg.ml.DACEnsemble
 import org.apache.spark.mllib.util.MLUtils._
 import org.apache.spark.{SparkConf, SparkContext}
 
 /**
   * Created by Luca Venturini on 23/02/15.
   */
-object BacUciCv {
+object DACUciCv {
 
   def main(args: Array[String]) {
 
@@ -33,7 +33,7 @@ object BacUciCv {
         (t1, t0.head)
     }
 
-    val l3 = new L3Ensemble(numModels = numModels.toInt, numClasses = numClasses.toInt, minSupport = minSupp.toDouble, sampleSize = sampleSize.toDouble)
+    val l3 = new DACEnsemble(numModels = numModels.toInt, numClasses = numClasses.toInt, minSupport = minSupp.toDouble, sampleSize = sampleSize.toDouble)
 
 
     /* Cross-validation: */
