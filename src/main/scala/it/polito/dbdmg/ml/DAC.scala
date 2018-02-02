@@ -28,7 +28,7 @@ object Rule {
 
 }
 
-case class Rule[T](antecedent:Array[T], consequent:T, support:Double, confidence:Double, chi2:Double) {
+case class Rule[T](antecedent:Array[T], consequent:T, support:Double, confidence:Double, chi2:Double) extends java.io.Serializable{
 
   override def toString() = {
     antecedent.mkString(" ") + f" -> $consequent ($support%.6f, $confidence%.6f, $chi2%.6f)"
@@ -177,6 +177,7 @@ class L3LocalModel(val rules:List[Rule[Long]],
     }
   }
 
+  @transient
   lazy val orderedRules : Map[Long, List[Rule[Long]]] = {
     rules.groupBy(_.consequent).mapValues(_.sorted)
   }
