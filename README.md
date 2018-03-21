@@ -89,9 +89,9 @@ Of course the parameters of `spark-submit` change depending on your cluster conf
 	
 ## References
 
-The associative classifier where DAC builds upon is inspired to L3, presented in:
-> Elena Baralis, Silvia Chiusano, Paolo Garza: A Lazy Approach to Associative Classification. IEEE Trans. Knowl. Data Eng. 20(2): 156-171 (2008). Available at: http://ieeexplore.ieee.org/xpl/articleDetails.jsp?arnumber=4358963
-	
+If you use DAC for your research, please cite:
+> Venturini, L., Baralis, E., & Garza, P. (2017). Scaling associative classification for very large datasets. Journal of Big Data, 4(1), 44. https://doi.org/10.1186/s40537-017-0107-2
+
 ## Credits
 
 The code uses part of [MLlib](http://spark.apache.org/mllib/) code, provided under Apache License, Version 2.0.
